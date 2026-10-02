@@ -99,7 +99,7 @@ canvas {
 }
 
 .slider-row label {
-  flex: 0 0 52px;
+  flex: 0 0 78px;
   font-size: 0.75rem;
   color: var(--muted);
 }
@@ -178,7 +178,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 @media (max-width: 420px) {
   h1 { font-size: 1rem; }
   .hud { font-size: 0.7rem; }
-  .slider-row label { flex: 0 0 44px; font-size: 0.7rem; }
+  .slider-row label { flex: 0 0 64px; font-size: 0.7rem; }
   .slider-row .val { flex: 0 0 48px; font-size: 0.72rem; }
   button { padding: 16px 8px; font-size: 0.85rem; }
 }
