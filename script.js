@@ -9,8 +9,6 @@
   var MAX_STEPS = 900;
   var START_X = -220;
   var START_Y = 0;
-  var START_VX = 40;
-  var START_VY = 0;
 
   // ---------- DOM ----------
   var canvas = document.getElementById('scene');
@@ -20,6 +18,11 @@
   var hudTime = document.getElementById('hud-time');
   var hudDv = document.getElementById('hud-dv');
   var hudStatus = document.getElementById('hud-status');
+
+  var sSpeed = document.getElementById('s-speed');
+  var sDir = document.getElementById('s-dir');
+  var vSpeed = document.getElementById('v-speed');
+  var vDir = document.getElementById('v-dir');
 
   var sDv = document.getElementById('s-dv');
   var sAng = document.getElementById('s-ang');
@@ -35,8 +38,8 @@
     finished: false,
     t: 0,
     step: 0,
-    ship: { x: START_X, y: START_Y, vx: START_VX, vy: START_VY },
-    impulse: { dv: 12, ang: 0 },
+    ship: { x: START_X, y: START_Y, vx: 0, vy: 0 },
+    impulse: { dv: 0, ang: 0 },
     applied: false,
     totalDv: 0,
     trail: []
@@ -63,8 +66,22 @@
 
   // ---------- Ползунки ----------
   function syncOutputs() {
+    vSpeed.textContent = parseFloat(sSpeed.value).toFixed(0);
+    vDir.textContent = parseFloat(sDir.value).toFixed(0) + '°';
     vDv.textContent = parseFloat(sDv.value).toFixed(1);
     vAng.textContent = parseFloat(sAng.value).toFixed(0) + '°';
+  }
+
+  function readStartConditions() {
+    var speed = parseFloat(sSpeed.value);
+    var dir = parseFloat(sDir.value);
+    var rad = dir * Math.PI / 180;
+    return {
+      x: START_X,
+      y: START_Y,
+      vx: speed * Math.cos(rad),
+      vy: speed * Math.sin(rad)
+    };
   }
 
   function readImpulse() {
@@ -85,19 +102,22 @@
     state.totalDv = 0;
 
     if (resetSliders) {
-      sDv.value = 12;
+      sSpeed.value = 40;
+      sDir.value = 0;
+      sDv.value = 0;
       sAng.value = 0;
       syncOutputs();
     }
 
+    var sc = readStartConditions();
+    state.ship.x = sc.x;
+    state.ship.y = sc.y;
+    state.ship.vx = sc.vx;
+    state.ship.vy = sc.vy;
+
     var imp = readImpulse();
     state.impulse.dv = imp.dv;
     state.impulse.ang = imp.ang;
-
-    state.ship.x = START_X;
-    state.ship.y = START_Y;
-    state.ship.vx = START_VX;
-    state.ship.vy = START_VY;
 
     msgEl.className = 'msg';
     msgEl.textContent = '';
@@ -185,7 +205,6 @@
 
   // ---------- HUD ----------
   function updateHud() {
-    var dist = Math.sqrt(state.ship.x * state.ship.x + state.ship.y * state.ship.y);
     var speed = Math.sqrt(state.ship.vx * state.ship.vx + state.ship.vy * state.ship.vy);
     hudSpeed.textContent = speed.toFixed(1);
     hudTime.textContent = state.t.toFixed(1);
@@ -342,6 +361,14 @@
   }
 
   // ---------- Обработчики ----------
+  sSpeed.addEventListener('input', function () {
+    syncOutputs();
+    if (!state.running) resetRound(false);
+  });
+  sDir.addEventListener('input', function () {
+    syncOutputs();
+    if (!state.running) resetRound(false);
+  });
   sDv.addEventListener('input', function () {
     syncOutputs();
     if (!state.running) resetRound(false);
