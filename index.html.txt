@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Стыковка с орбитальной станцией</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <h1>Стыковка с орбитальной станцией</h1>
+    <p class="disclaimer">
+      Учебная модель. Траектория и расчёты упрощены.
+    </p>
+
+    <div class="canvas-wrap">
+      <canvas id="scene"></canvas>
+    </div>
+
+    <div class="hud">
+      <div>Скорость: <b id="hud-speed">0.0</b></div>
+      <div>Время: <b id="hud-time">0.0</b></div>
+      <div>Суммарный ΔV: <b id="hud-dv">0.0</b></div>
+      <div>Статус: <b id="hud-status">ожидание</b></div>
+    </div>
+
+    <div class="panel">
+      <h2>Импульс</h2>
+      <div class="slider-row">
+        <label for="s-dv">ΔV</label>
+        <input type="range" id="s-dv" min="0" max="60" step="0.5" value="12">
+        <span class="val" id="v-dv">12.0</span>
+      </div>
+      <div class="slider-row">
+        <label for="s-ang">Угол</label>
+        <input type="range" id="s-ang" min="-90" max="90" step="1" value="0">
+        <span class="val" id="v-ang">0°</span>
+      </div>
+    </div>
+
+    <div class="buttons">
+      <button id="btn-start" class="primary">▶ Запуск</button>
+      <button id="btn-reset">⟲ Заново</button>
+    </div>
+
+    <div id="msg" class="msg"></div>
+
+    <p class="hint">
+      Компьютер: стрелки ← → меняют угол, ↑ ↓ меняют ΔV, пробел — запуск, R — заново.
+      Телефон: ползунки и кнопки ниже.
+    </p>
+
+    <div class="buttons mobile-nudge">
+      <button id="btn-left">← Угол</button>
+      <button id="btn-right">Угол →</button>
+    </div>
+    <div class="buttons mobile-nudge">
+      <button id="btn-down">ΔV −</button>
+      <button id="btn-up">ΔV +</button>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
