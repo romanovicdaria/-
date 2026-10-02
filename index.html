@@ -25,14 +25,28 @@
     </div>
 
     <div class="panel">
+      <h2>Начальные условия</h2>
+      <div class="slider-row">
+        <label for="s-speed">Скорость</label>
+        <input type="range" id="s-speed" min="0" max="80" step="1" value="40">
+        <span class="val" id="v-speed">40</span>
+      </div>
+      <div class="slider-row">
+        <label for="s-dir">Направление</label>
+        <input type="range" id="s-dir" min="-90" max="90" step="1" value="0">
+        <span class="val" id="v-dir">0°</span>
+      </div>
+    </div>
+
+    <div class="panel">
       <h2>Импульс</h2>
       <div class="slider-row">
         <label for="s-dv">ΔV</label>
-        <input type="range" id="s-dv" min="0" max="60" step="0.5" value="12">
-        <span class="val" id="v-dv">12.0</span>
+        <input type="range" id="s-dv" min="0" max="60" step="0.5" value="0">
+        <span class="val" id="v-dv">0.0</span>
       </div>
       <div class="slider-row">
-        <label for="s-ang">Угол</label>
+        <label for="s-ang">Угол имп.</label>
         <input type="range" id="s-ang" min="-90" max="90" step="1" value="0">
         <span class="val" id="v-ang">0°</span>
       </div>
@@ -46,7 +60,7 @@
     <div id="msg" class="msg"></div>
 
     <p class="hint">
-      Компьютер: стрелки ← → меняют угол, ↑ ↓ меняют ΔV, пробел — запуск, R — заново.
+      Компьютер: стрелки ← → меняют угол импульса, ↑ ↓ меняют ΔV, пробел — запуск, R — заново.
       Телефон: ползунки и кнопки ниже.
     </p>
 
