@@ -1,184 +1,388 @@
-:root {
-  --bg: #0a0e1a;
-  --panel: #131a2b;
-  --accent: #4da6ff;
-  --good: #4cd964;
-  --bad: #ff4d4d;
-  --text: #e6edf7;
-  --muted: #8a97ad;
-  --border: #22304a;
-}
+(function () {
+  'use strict';
 
-* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  // ---------- Константы ----------
+  var SCALE = 1.6;
+  var STATION_R = 18;
+  var DOCK_R = 42;
+  var DT = 0.06;
+  var MAX_STEPS = 900;
+  var START_X = -220;
+  var START_Y = 0;
+  var START_VX = 40;
+  var START_VY = 0;
 
-html, body {
-  margin: 0;
-  padding: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  overflow-x: hidden;
-  user-select: none;
-}
+  // ---------- DOM ----------
+  var canvas = document.getElementById('scene');
+  var ctx = canvas.getContext('2d');
+  var msgEl = document.getElementById('msg');
+  var hudSpeed = document.getElementById('hud-speed');
+  var hudTime = document.getElementById('hud-time');
+  var hudDv = document.getElementById('hud-dv');
+  var hudStatus = document.getElementById('hud-status');
 
-#app {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 10px 12px 24px;
-}
+  var sDv = document.getElementById('s-dv');
+  var sAng = document.getElementById('s-ang');
+  var vDv = document.getElementById('v-dv');
+  var vAng = document.getElementById('v-ang');
 
-h1 {
-  font-size: 1.15rem;
-  margin: 6px 0 4px;
-  text-align: center;
-  color: var(--accent);
-  letter-spacing: 0.3px;
-}
+  var btnStart = document.getElementById('btn-start');
+  var btnReset = document.getElementById('btn-reset');
 
-.disclaimer {
-  text-align: center;
-  font-size: 0.72rem;
-  color: var(--muted);
-  margin: 0 0 10px;
-  line-height: 1.3;
-}
+  // ---------- Состояние ----------
+  var state = {
+    running: false,
+    finished: false,
+    t: 0,
+    step: 0,
+    ship: { x: START_X, y: START_Y, vx: START_VX, vy: START_VY },
+    impulse: { dv: 12, ang: 0 },
+    applied: false,
+    totalDv: 0,
+    trail: []
+  };
 
-.canvas-wrap {
-  position: relative;
-  width: 100%;
-  background: radial-gradient(circle at 70% 30%, #101a33 0%, #05070d 80%);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  overflow: hidden;
-  aspect-ratio: 16 / 10;
-}
+  // ---------- Размер canvas ----------
+  function resize() {
+    var wrap = canvas.parentElement;
+    var dpr = window.devicePixelRatio || 1;
+    var w = wrap.clientWidth;
+    var h = wrap.clientHeight;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw();
+  }
 
-canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
+  // ---------- Координаты ----------
+  function toScreen(x, y) {
+    var w = canvas.clientWidth;
+    var h = canvas.clientHeight;
+    return { x: w / 2 + x * SCALE, y: h / 2 - y * SCALE };
+  }
 
-.hud {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  justify-content: center;
-  font-size: 0.75rem;
-  color: var(--muted);
-  padding: 10px 4px 4px;
-}
+  // ---------- Ползунки ----------
+  function syncOutputs() {
+    vDv.textContent = parseFloat(sDv.value).toFixed(1);
+    vAng.textContent = parseFloat(sAng.value).toFixed(0) + '°';
+  }
 
-.hud b {
-  color: var(--text);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
+  function readImpulse() {
+    return {
+      dv: parseFloat(sDv.value),
+      ang: parseFloat(sAng.value)
+    };
+  }
 
-.panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 10px 12px 6px;
-  margin-top: 10px;
-}
+  // ---------- Сброс ----------
+  function resetRound(resetSliders) {
+    state.running = false;
+    state.finished = false;
+    state.t = 0;
+    state.step = 0;
+    state.trail = [];
+    state.applied = false;
+    state.totalDv = 0;
 
-.panel h2 {
-  font-size: 0.78rem;
-  margin: 0 0 8px;
-  color: var(--accent);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
+    if (resetSliders) {
+      sDv.value = 12;
+      sAng.value = 0;
+      syncOutputs();
+    }
 
-.slider-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-}
+    var imp = readImpulse();
+    state.impulse.dv = imp.dv;
+    state.impulse.ang = imp.ang;
 
-.slider-row label {
-  flex: 0 0 52px;
-  font-size: 0.75rem;
-  color: var(--muted);
-}
+    state.ship.x = START_X;
+    state.ship.y = START_Y;
+    state.ship.vx = START_VX;
+    state.ship.vy = START_VY;
 
-.slider-row input[type=range] {
-  flex: 1;
-  accent-color: var(--accent);
-  height: 32px;
-}
+    msgEl.className = 'msg';
+    msgEl.textContent = '';
+    hudStatus.textContent = 'ожидание';
+    hudStatus.style.color = '';
+    updateHud();
+    draw();
+  }
 
-.slider-row .val {
-  flex: 0 0 54px;
-  text-align: right;
-  font-size: 0.78rem;
-  font-variant-numeric: tabular-nums;
-}
+  // ---------- Старт ----------
+  function startSim() {
+    if (state.running) return;
+    resetRound(false);
+    state.running = true;
+    state.finished = false;
+    hudStatus.textContent = 'полёт';
+    hudStatus.style.color = '#4da6ff';
+    msgEl.className = 'msg';
+    msgEl.textContent = '';
+    requestAnimationFrame(loop);
+  }
 
-.buttons {
-  display: flex;
-  gap: 10px;
-  margin-top: 10px;
-}
+  // ---------- Физика ----------
+  function stepPhysics() {
+    if (state.finished) return;
 
-button {
-  flex: 1;
-  padding: 14px 10px;
-  font-size: 0.9rem;
-  font-weight: 700;
-  border: none;
-  border-radius: 10px;
-  background: #1c2740;
-  color: var(--text);
-  cursor: pointer;
-  touch-action: manipulation;
-}
+    if (!state.applied) {
+      var rad = state.impulse.ang * Math.PI / 180;
+      state.ship.vx += state.impulse.dv * Math.cos(rad);
+      state.ship.vy += state.impulse.dv * Math.sin(rad);
+      state.totalDv += Math.abs(state.impulse.dv);
+      state.applied = true;
+    }
 
-button:active { transform: scale(0.98); }
-button.primary { background: var(--accent); color: #04101f; }
-button:disabled { opacity: 0.45; cursor: not-allowed; }
+    var dx = 0 - state.ship.x;
+    var dy = 0 - state.ship.y;
+    var r2 = dx * dx + dy * dy;
+    var r = Math.sqrt(r2) || 1;
+    var G = 12;
+    var a = G / Math.max(r2, 400);
+    state.ship.vx += (dx / r) * a * DT;
+    state.ship.vy += (dy / r) * a * DT;
 
-.msg {
-  margin-top: 10px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  font-size: 0.82rem;
-  line-height: 1.4;
-  min-height: 1em;
-  display: none;
-}
+    state.ship.x += state.ship.vx * DT;
+    state.ship.y += state.ship.vy * DT;
+    state.t += DT;
+    state.step++;
 
-.msg.show { display: block; }
-.msg.ok {
-  background: rgba(76, 217, 100, 0.12);
-  border: 1px solid rgba(76, 217, 100, 0.4);
-  color: #b8f0c4;
-}
-.msg.err {
-  background: rgba(255, 77, 77, 0.12);
-  border: 1px solid rgba(255, 77, 77, 0.4);
-  color: #ffc2c2;
-}
+    state.trail.push({ x: state.ship.x, y: state.ship.y });
+    if (state.trail.length > 500) state.trail.shift();
 
-.hint {
-  font-size: 0.7rem;
-  color: var(--muted);
-  text-align: center;
-  line-height: 1.4;
-  margin: 12px 0 0;
-}
+    checkResult();
+  }
 
-.mobile-nudge button {
-  padding: 16px 10px;
-  font-size: 0.85rem;
-}
+  function checkResult() {
+    var dx = state.ship.x;
+    var dy = state.ship.y;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    var speed = Math.sqrt(state.ship.vx * state.ship.vx + state.ship.vy * state.ship.vy);
 
-@media (max-width: 420px) {
-  h1 { font-size: 1rem; }
-  .hud { font-size: 0.7rem; }
-  .slider-row label { flex: 0 0 44px; font-size: 0.7rem; }
-  .slider-row .val { flex: 0 0 48px; font-size: 0.72rem; }
-  button { padding: 16px 8px; font-size: 0.85rem; }
-}
+    if (dist <= DOCK_R && speed <= 28) {
+      finish(true, 'Успешная стыковка. Расстояние ' + dist.toFixed(1) + ', скорость ' + speed.toFixed(1) + '.');
+      return;
+    }
+    if (Math.abs(state.ship.x) > 420 || Math.abs(state.ship.y) > 320) {
+      finish(false, 'Аппарат ушёл за пределы зоны. Расстояние ' + dist.toFixed(1) + '.');
+      return;
+    }
+    if (state.step >= MAX_STEPS) {
+      finish(false, 'Время вышло. Расстояние ' + dist.toFixed(1) + ', скорость ' + speed.toFixed(1) + '.');
+      return;
+    }
+  }
+
+  function finish(ok, text) {
+    state.running = false;
+    state.finished = true;
+    hudStatus.textContent = ok ? 'успех' : 'неудача';
+    hudStatus.style.color = ok ? '#4cd964' : '#ff4d4d';
+    msgEl.className = 'msg show ' + (ok ? 'ok' : 'err');
+    msgEl.textContent = text;
+    updateHud();
+    draw();
+  }
+
+  // ---------- HUD ----------
+  function updateHud() {
+    var dist = Math.sqrt(state.ship.x * state.ship.x + state.ship.y * state.ship.y);
+    var speed = Math.sqrt(state.ship.vx * state.ship.vx + state.ship.vy * state.ship.vy);
+    hudSpeed.textContent = speed.toFixed(1);
+    hudTime.textContent = state.t.toFixed(1);
+    hudDv.textContent = state.totalDv.toFixed(1);
+  }
+
+  // ---------- Отрисовка ----------
+  function draw() {
+    var w = canvas.clientWidth;
+    var h = canvas.clientHeight;
+    ctx.clearRect(0, 0, w, h);
+
+    if (!draw._stars) {
+      draw._stars = [];
+      for (var i = 0; i < 90; i++) {
+        draw._stars.push({ x: Math.random(), y: Math.random(), r: Math.random() * 1.2 + 0.2 });
+      }
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    for (var j = 0; j < draw._stars.length; j++) {
+      var s = draw._stars[j];
+      ctx.beginPath();
+      ctx.arc(s.x * w, s.y * h, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    var st = toScreen(0, 0);
+
+    // Коридор
+    var corridorLen = 320;
+    var corridorHalf = 22;
+    var c1 = toScreen(-corridorLen, corridorHalf);
+    var c2 = toScreen(-corridorLen, -corridorHalf);
+    var c3 = toScreen(0, -corridorHalf);
+    var c4 = toScreen(0, corridorHalf);
+    ctx.beginPath();
+    ctx.moveTo(c1.x, c1.y);
+    ctx.lineTo(c2.x, c2.y);
+    ctx.lineTo(c3.x, c3.y);
+    ctx.lineTo(c4.x, c4.y);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(76, 217, 100, 0.10)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(76, 217, 100, 0.35)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Радиус стыковки
+    ctx.beginPath();
+    ctx.arc(st.x, st.y, DOCK_R * SCALE, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(76, 217, 100, 0.5)';
+    ctx.setLineDash([5, 5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Станция
+    ctx.beginPath();
+    ctx.arc(st.x, st.y, STATION_R * SCALE * 0.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffb84d';
+    ctx.shadowColor = '#ffb84d';
+    ctx.shadowBlur = 16;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,184,77,0.6)';
+    ctx.fillRect(st.x - 34, st.y - 3, 14, 6);
+    ctx.fillRect(st.x + 20, st.y - 3, 14, 6);
+
+    // След
+    if (state.trail.length > 1) {
+      ctx.beginPath();
+      for (var k = 0; k < state.trail.length; k++) {
+        var p = toScreen(state.trail[k].x, state.trail[k].y);
+        if (k === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      }
+      ctx.strokeStyle = 'rgba(77, 166, 255, 0.45)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    // Аппарат
+    var sp = toScreen(state.ship.x, state.ship.y);
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#4da6ff';
+    ctx.shadowColor = '#4da6ff';
+    ctx.shadowBlur = 14;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Вектор скорости
+    var speed = Math.sqrt(state.ship.vx * state.ship.vx + state.ship.vy * state.ship.vy);
+    if (speed > 0.5) {
+      var kk = 0.6;
+      ctx.beginPath();
+      ctx.moveTo(sp.x, sp.y);
+      ctx.lineTo(sp.x + state.ship.vx * kk, sp.y - state.ship.vy * kk);
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = 'rgba(255,184,77,0.9)';
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('СТАНЦИЯ', st.x, st.y + 30);
+  }
+
+  // ---------- Цикл ----------
+  function loop() {
+    if (!state.running) return;
+    for (var i = 0; i < 2; i++) {
+      if (state.running) stepPhysics();
+    }
+    updateHud();
+    draw();
+    if (state.running) requestAnimationFrame(loop);
+  }
+
+  // ---------- Корректировка ----------
+  function nudge(dvDelta, angDelta) {
+    var dv = parseFloat(sDv.value) + dvDelta;
+    dv = Math.min(60, Math.max(0, dv));
+    sDv.value = dv;
+
+    var ang = parseFloat(sAng.value) + angDelta;
+    while (ang > 90) ang -= 180;
+    while (ang < -90) ang += 180;
+    sAng.value = ang;
+
+    syncOutputs();
+    if (state.running) {
+      state.impulse.ang = ang;
+    }
+  }
+
+  function holdButton(id, fn) {
+    var el = document.getElementById(id);
+    var timer = null;
+    function start(e) {
+      e.preventDefault();
+      fn();
+      timer = setInterval(fn, 80);
+    }
+    function stop() {
+      if (timer) { clearInterval(timer); timer = null; }
+    }
+    el.addEventListener('mousedown', start);
+    el.addEventListener('touchstart', start, { passive: false });
+    el.addEventListener('mouseup', stop);
+    el.addEventListener('mouseleave', stop);
+    el.addEventListener('touchend', stop);
+    el.addEventListener('touchcancel', stop);
+  }
+
+  // ---------- Обработчики ----------
+  sDv.addEventListener('input', function () {
+    syncOutputs();
+    if (!state.running) resetRound(false);
+  });
+  sAng.addEventListener('input', function () {
+    syncOutputs();
+    if (!state.running) resetRound(false);
+  });
+
+  btnStart.addEventListener('click', startSim);
+  btnReset.addEventListener('click', function () {
+    state.running = false;
+    resetRound(true);
+  });
+
+  holdButton('btn-left', function () { nudge(0, -2); });
+  holdButton('btn-right', function () { nudge(0, 2); });
+  holdButton('btn-up', function () { nudge(1, 0); });
+  holdButton('btn-down', function () { nudge(-1, 0); });
+
+  window.addEventListener('keydown', function (e) {
+    switch (e.key) {
+      case 'ArrowLeft': nudge(0, -2); e.preventDefault(); break;
+      case 'ArrowRight': nudge(0, 2); e.preventDefault(); break;
+      case 'ArrowUp': nudge(1, 0); e.preventDefault(); break;
+      case 'ArrowDown': nudge(-1, 0); e.preventDefault(); break;
+      case ' ': startSim(); e.preventDefault(); break;
+      case 'r':
+      case 'R':
+      case 'к':
+      case 'К':
+        state.running = false;
+        resetRound(true);
+        break;
+    }
+  });
+
+  window.addEventListener('resize', resize);
+
+  // ---------- Старт ----------
+  syncOutputs();
+  resetRound(true);
+  resize();
+})();
