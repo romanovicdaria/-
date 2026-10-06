@@ -18,18 +18,24 @@
     </div>
 
     <div class="hud">
+      <div>Расстояние: <b id="hud-dist">0.0</b></div>
       <div>Скорость: <b id="hud-speed">0.0</b></div>
       <div>Время: <b id="hud-time">0.0</b></div>
       <div>Суммарный ΔV: <b id="hud-dv">0.0</b></div>
       <div>Статус: <b id="hud-status">ожидание</b></div>
     </div>
 
+    <div class="fuel">
+      <div class="fuel-label">Топливо: <b id="fuel-num">30.0 / 30</b></div>
+      <div class="fuel-bar"><div class="fuel-fill" id="fuel-fill"></div></div>
+    </div>
+
     <div class="panel">
       <h2>Начальные условия</h2>
       <div class="slider-row">
         <label for="s-speed">Скорость</label>
-        <input type="range" id="s-speed" min="0" max="80" step="1" value="40">
-        <span class="val" id="v-speed">40</span>
+        <input type="range" id="s-speed" min="0" max="80" step="1" value="30">
+        <span class="val" id="v-speed">30</span>
       </div>
       <div class="slider-row">
         <label for="s-dir">Направление</label>
@@ -42,7 +48,7 @@
       <h2>Импульс</h2>
       <div class="slider-row">
         <label for="s-dv">ΔV</label>
-        <input type="range" id="s-dv" min="0" max="60" step="0.5" value="0">
+        <input type="range" id="s-dv" min="0" max="30" step="0.5" value="0">
         <span class="val" id="v-dv">0.0</span>
       </div>
       <div class="slider-row">
