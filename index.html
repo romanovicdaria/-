@@ -20,8 +20,9 @@
     <div class="hud">
       <div>Расстояние: <b id="hud-dist">0.0</b></div>
       <div>Скорость: <b id="hud-speed">0.0</b></div>
+      <div>Сближение: <b id="hud-range">0.0</b></div>
       <div>Время: <b id="hud-time">0.0</b></div>
-      <div>Суммарный ΔV: <b id="hud-dv">0.0</b></div>
+      <div>ΔV: <b id="hud-dv">0.0</b></div>
       <div>Статус: <b id="hud-status">ожидание</b></div>
     </div>
 
@@ -45,7 +46,7 @@
     </div>
 
     <div class="panel">
-      <h2>Импульс</h2>
+      <h2>Импульс (ΔV)</h2>
       <div class="slider-row">
         <label for="s-dv">ΔV</label>
         <input type="range" id="s-dv" min="0" max="30" step="0.5" value="0">
@@ -53,21 +54,26 @@
       </div>
       <div class="slider-row">
         <label for="s-ang">Угол имп.</label>
-        <input type="range" id="s-ang" min="-90" max="90" step="1" value="0">
+        <input type="range" id="s-ang" min="-180" max="180" step="1" value="0">
         <span class="val" id="v-ang">0°</span>
       </div>
+      <p class="hint-small">
+        Угол 0° — ускорение «вперёд по движению», 180° — торможение.
+        Пока не запущено, ΔV сработает на старте. Во время полёта жми кнопку «Импульс».
+      </p>
     </div>
 
     <div class="buttons">
       <button id="btn-start" class="primary">▶ Запуск</button>
+      <button id="btn-burn" disabled>💥 Импульс</button>
       <button id="btn-reset">⟲ Заново</button>
     </div>
 
     <div id="msg" class="msg"></div>
 
     <p class="hint">
-      Компьютер: стрелки ← → меняют угол импульса, ↑ ↓ меняют ΔV, пробел — запуск, R — заново.
-      Телефон: ползунки и кнопки ниже.
+      Компьютер: стрелки ← → меняют угол импульса, ↑ ↓ меняют ΔV, пробел — запуск,
+      B — импульс в полёте, R — заново.
     </p>
 
     <div class="buttons mobile-nudge">
