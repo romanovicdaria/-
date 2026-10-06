@@ -158,7 +158,6 @@
       var rad = state.impulse.ang * Math.PI / 180;
       var dv = state.impulse.dv;
 
-      // Ограничение по топливу
       if (dv > state.fuel) {
         dv = state.fuel;
       }
@@ -176,7 +175,6 @@
       updateFuel();
     }
 
-    // Притяжение станции
     var dx = 0 - state.ship.x;
     var dy = 0 - state.ship.y;
     var r2 = dx * dx + dy * dy;
@@ -186,7 +184,6 @@
     state.ship.vx += (dx / r) * a * DT;
     state.ship.vy += (dy / r) * a * DT;
 
-    // Движение
     state.ship.x += state.ship.vx * DT;
     state.ship.y += state.ship.vy * DT;
     state.t += DT;
@@ -272,78 +269,134 @@
   function drawStation(cx, cy) {
     var r = STATION_R * SCALE * 0.5;
 
-    // Солнечные панели
-    var panelW = 46, panelH = 12;
-    ctx.fillStyle = '#1e3a5f';
-    ctx.fillRect(cx - r - panelW - 6, cy - panelH / 2, panelW, panelH);
-    ctx.fillRect(cx + r + 6, cy - panelH / 2, panelW, panelH);
-    // Полоски на панелях
-    ctx.strokeStyle = 'rgba(120, 170, 220, 0.5)';
-    ctx.lineWidth = 1;
-    for (var i = 0; i < 4; i++) {
-      var offX = i * (panelW / 4);
-      ctx.beginPath();
-      ctx.moveTo(cx - r - panelW - 6 + offX, cy - panelH / 2);
-      ctx.lineTo(cx - r - panelW - 6 + offX, cy + panelH / 2);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(cx + r + 6 + offX, cy - panelH / 2);
-      ctx.lineTo(cx + r + 6 + offX, cy + panelH / 2);
-      ctx.stroke();
-    }
+    // Свечение
+    var glow = ctx.createRadialGradient(cx, cy, r, cx, cy, r * 3.2);
+    glow.addColorStop(0, 'rgba(255,184,77,0.30)');
+    glow.addColorStop(1, 'rgba(255,184,77,0)');
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 3.2, 0, Math.PI * 2);
+    ctx.fillStyle = glow;
+    ctx.fill();
 
-    // Центральный модуль (цилиндр)
+    // Солнечные панели (слева и справа)
+    var panelW = 52, panelH = 14;
+    drawSolarPanel(cx - r - panelW - 6, cy - panelH / 2, panelW, panelH);
+    drawSolarPanel(cx + r + 6, cy - panelH / 2, panelW, panelH);
+
+    // Перекладины к панелям
+    ctx.strokeStyle = '#7d8a9c';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - r, cy);
+    ctx.lineTo(cx - r - 6, cy);
+    ctx.moveTo(cx + r, cy);
+    ctx.lineTo(cx + r + 6, cy);
+    ctx.stroke();
+
+    // Центральный модуль
     var bodyW = r * 2.2;
     var bodyH = r * 1.4;
     var grad = ctx.createLinearGradient(cx - bodyW / 2, cy - bodyH / 2, cx + bodyW / 2, cy + bodyH / 2);
-    grad.addColorStop(0, '#ffd58a');
-    grad.addColorStop(0.5, '#ffb84d');
-    grad.addColorStop(1, '#c8842a');
+    grad.addColorStop(0, '#fff0c4');
+    grad.addColorStop(0.35, '#ffcf7a');
+    grad.addColorStop(0.75, '#e69b36');
+    grad.addColorStop(1, '#a36a1f');
     ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.roundRect ?
-      ctx.roundRect(cx - bodyW / 2, cy - bodyH / 2, bodyW, bodyH, 6) :
-      ctx.rect(cx - bodyW / 2, cy - bodyH / 2, bodyW, bodyH);
+    roundedRect(cx - bodyW / 2, cy - bodyH / 2, bodyW, bodyH, 6);
     ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
 
-    // Блик
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.fillRect(cx - bodyW / 2 + 4, cy - bodyH / 2 + 3, bodyW - 8, 3);
+    // Блик на корпусе
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.fillRect(cx - bodyW / 2 + 6, cy - bodyH / 2 + 3, bodyW - 12, 2);
+
+    // Иллюминаторы
+    ctx.fillStyle = 'rgba(120,200,255,0.9)';
+    ctx.beginPath();
+    ctx.arc(cx - 8, cy, 3, 0, Math.PI * 2);
+    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+    ctx.arc(cx + 8, cy, 3, 0, Math.PI * 2);
+    ctx.fill();
 
     // Стыковочный узел справа
-    ctx.fillStyle = '#ffe1a8';
+    ctx.fillStyle = '#fff3d6';
     ctx.beginPath();
-    ctx.arc(cx + bodyW / 2 + 4, cy, 4, 0, Math.PI * 2);
+    ctx.arc(cx + bodyW / 2 + 5, cy, 5, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = '#a36a1f';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
 
-    // Маленький модуль сверху
+    // Верхний модуль-купол
     ctx.fillStyle = '#d89a3f';
     ctx.beginPath();
-    ctx.arc(cx, cy - bodyH / 2 - 6, 5, 0, Math.PI * 2);
+    ctx.arc(cx, cy - bodyH / 2 - 6, 6, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.stroke();
 
-    // Свечение
+    // Антенна-тарелка
+    ctx.strokeStyle = '#9aa7b8';
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(cx, cy, r * 2.6, 0, Math.PI * 2);
-    var g2 = ctx.createRadialGradient(cx, cy, r, cx, cy, r * 2.6);
-    g2.addColorStop(0, 'rgba(255,184,77,0.28)');
-    g2.addColorStop(1, 'rgba(255,184,77,0)');
-    ctx.fillStyle = g2;
+    ctx.moveTo(cx, cy - bodyH / 2 - 12);
+    ctx.lineTo(cx, cy - bodyH / 2 - 22);
+    ctx.stroke();
+    ctx.fillStyle = '#c9d4e2';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - bodyH / 2 - 24, 7, 4, 0, 0, Math.PI * 2);
     ctx.fill();
 
     // Подпись
-    ctx.fillStyle = 'rgba(255,184,77,0.9)';
+    ctx.fillStyle = 'rgba(255,184,77,0.95)';
     ctx.font = '11px system-ui, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('СТАНЦИЯ', cx, cy + bodyH / 2 + 22);
+    ctx.fillText('СТАНЦИЯ', cx, cy + bodyH / 2 + 24);
+  }
+
+  function drawSolarPanel(x, y, w, h) {
+    var g = ctx.createLinearGradient(x, y, x, y + h);
+    g.addColorStop(0, '#2b4d78');
+    g.addColorStop(0.5, '#3d6ea8');
+    g.addColorStop(1, '#1c3455');
+    ctx.fillStyle = g;
+    roundedRect(x, y, w, h, 3);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(160,210,255,0.7)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Ячейки
+    ctx.strokeStyle = 'rgba(160,210,255,0.35)';
+    for (var i = 1; i < 5; i++) {
+      var gx = x + i * (w / 5);
+      ctx.beginPath();
+      ctx.moveTo(gx, y);
+      ctx.lineTo(gx, y + h);
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.moveTo(x, y + h / 2);
+    ctx.lineTo(x + w, y + h / 2);
+    ctx.stroke();
   }
 
   function drawShip(px, py, burning) {
     var angle = 0;
-    // Ориентируем аппарат по вектору скорости
     if (state.ship.vx !== 0 || state.ship.vy !== 0) {
       angle = Math.atan2(-state.ship.vy, state.ship.vx);
     }
+
+    // Свечение
+    var glow = ctx.createRadialGradient(px, py, 2, px, py, 18);
+    glow.addColorStop(0, 'rgba(77,166,255,0.45)');
+    glow.addColorStop(1, 'rgba(77,166,255,0)');
+    ctx.beginPath();
+    ctx.arc(px, py, 18, 0, Math.PI * 2);
+    ctx.fillStyle = glow;
+    ctx.fill();
 
     ctx.save();
     ctx.translate(px, py);
@@ -351,63 +404,82 @@
 
     // Факел двигателя
     if (burning) {
-      var flameLen = 14 + Math.random() * 8;
-      var flameGrad = ctx.createLinearGradient(-8, 0, -8 - flameLen, 0);
-      flameGrad.addColorStop(0, 'rgba(255,255,180,0.9)');
-      flameGrad.addColorStop(0.5, 'rgba(255,150,50,0.6)');
-      flameGrad.addColorStop(1, 'rgba(255,80,20,0)');
-      ctx.fillStyle = flameGrad;
+      var flameLen = 16 + Math.random() * 8;
+      var fg = ctx.createLinearGradient(-10, 0, -10 - flameLen, 0);
+      fg.addColorStop(0, 'rgba(255,255,200,0.95)');
+      fg.addColorStop(0.4, 'rgba(255,180,60,0.7)');
+      fg.addColorStop(1, 'rgba(255,80,20,0)');
+      ctx.fillStyle = fg;
       ctx.beginPath();
-      ctx.moveTo(-8, -4);
-      ctx.lineTo(-8 - flameLen, 0);
-      ctx.lineTo(-8, 4);
+      ctx.moveTo(-10, -5);
+      ctx.lineTo(-10 - flameLen, 0);
+      ctx.lineTo(-10, 5);
       ctx.closePath();
       ctx.fill();
     }
 
-    // Корпус
-    var g = ctx.createLinearGradient(0, -8, 0, 8);
-    g.addColorStop(0, '#a9d4ff');
-    g.addColorStop(0.5, '#4da6ff');
-    g.addColorStop(1, '#1f5c9c');
-    ctx.fillStyle = g;
+    // Сопло
+    ctx.fillStyle = '#4a5a72';
     ctx.beginPath();
-    ctx.moveTo(14, 0);
-    ctx.lineTo(6, -7);
-    ctx.lineTo(-10, -6);
-    ctx.lineTo(-10, 6);
-    ctx.lineTo(6, 7);
+    ctx.moveTo(-8, -5);
+    ctx.lineTo(-12, -6);
+    ctx.lineTo(-12, 6);
+    ctx.lineTo(-8, 5);
     ctx.closePath();
     ctx.fill();
 
-    // Обводка
-    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    // Корпус
+    var g = ctx.createLinearGradient(0, -8, 0, 8);
+    g.addColorStop(0, '#cfe6ff');
+    g.addColorStop(0.5, '#5fb0ff');
+    g.addColorStop(1, '#1f5c9c');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(16, 0);
+    ctx.lineTo(6, -8);
+    ctx.lineTo(-8, -7);
+    ctx.lineTo(-8, 7);
+    ctx.lineTo(6, 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
     ctx.lineWidth = 1;
     ctx.stroke();
 
     // Кабина
-    ctx.fillStyle = 'rgba(180, 230, 255, 0.9)';
+    var cg = ctx.createRadialGradient(6, -2, 1, 6, -2, 5);
+    cg.addColorStop(0, 'rgba(220,245,255,1)');
+    cg.addColorStop(1, 'rgba(90,170,220,0.8)');
+    ctx.fillStyle = cg;
     ctx.beginPath();
-    ctx.arc(4, 0, 3, 0, Math.PI * 2);
+    ctx.arc(6, -2, 3.2, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
 
-    // Антенна
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    // Полоска по корпусу
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
     ctx.beginPath();
-    ctx.moveTo(-10, 0);
-    ctx.lineTo(-15, 0);
+    ctx.moveTo(-8, 0);
+    ctx.lineTo(14, 0);
     ctx.stroke();
 
     ctx.restore();
+  }
 
-    // Свечение вокруг аппарата
+  function roundedRect(x, y, w, h, r) {
     ctx.beginPath();
-    ctx.arc(px, py, 14, 0, Math.PI * 2);
-    var g2 = ctx.createRadialGradient(px, py, 2, px, py, 14);
-    g2.addColorStop(0, 'rgba(77,166,255,0.4)');
-    g2.addColorStop(1, 'rgba(77,166,255,0)');
-    ctx.fillStyle = g2;
-    ctx.fill();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
   }
 
   function draw() {
@@ -419,7 +491,6 @@
 
     var st = toScreen(0, 0);
 
-    // Проверка условий для подсветки
     var dist = Math.sqrt(state.ship.x * state.ship.x + state.ship.y * state.ship.y);
     var speed = Math.sqrt(state.ship.vx * state.ship.vx + state.ship.vy * state.ship.vy);
     var inDock = dist <= DOCK_R;
@@ -487,13 +558,11 @@
       ctx.stroke();
     }
 
-    // Станция и аппарат
     drawStation(st.x, st.y);
 
     var sp = toScreen(state.ship.x, state.ship.y);
     drawShip(sp.x, sp.y, state.burnTimer > 0);
 
-    // Вектор скорости
     if (speed > 0.5) {
       var kk = 0.6;
       ctx.beginPath();
@@ -576,4 +645,33 @@
     resetRound(true);
   });
 
+  holdButton('btn-left', function () { nudge(0, -2); });
+  holdButton('btn-right', function () { nudge(0, 2); });
+  holdButton('btn-up', function () { nudge(1, 0); });
+  holdButton('btn-down', function () { nudge(-1, 0); });
+
+  window.addEventListener('keydown', function (e) {
+    switch (e.key) {
+      case 'ArrowLeft': nudge(0, -2); e.preventDefault(); break;
+      case 'ArrowRight': nudge(0, 2); e.preventDefault(); break;
+      case 'ArrowUp': nudge(1, 0); e.preventDefault(); break;
+      case 'ArrowDown': nudge(-1, 0); e.preventDefault(); break;
+      case ' ': startSim(); e.preventDefault(); break;
+      case 'r':
+      case 'R':
+      case 'к':
+      case 'К':
+        state.running = false;
+        resetRound(true);
+        break;
+    }
+  });
+
+  window.addEventListener('resize', resize);
+
+  // ---------- Старт ----------
+  syncOutputs();
+  resetRound(true);
+  resize();
+})();
  
