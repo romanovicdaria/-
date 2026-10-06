@@ -173,6 +173,10 @@ button {
 button:active { transform: scale(0.98); }
 button.primary { background: var(--accent); color: #04101f; }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
+button#btn-burn:not(:disabled) {
+  background: linear-gradient(180deg, #ffb84d 0%, #e68b1f 100%);
+  color: #1a1102;
+}
 
 .msg {
   margin-top: 10px;
@@ -202,6 +206,14 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   text-align: center;
   line-height: 1.4;
   margin: 12px 0 0;
+}
+
+.hint-small {
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-align: left;
+  line-height: 1.4;
+  margin: 0 0 6px;
 }
 
 .mobile-nudge button {
