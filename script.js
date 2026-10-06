@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  // ---------- Константы модели ----------
+  // ---------- Константы ----------
   var SCALE = 1.6;
   var STATION_R = 18;
   var DOCK_R = 42;
@@ -11,9 +11,7 @@
   var START_Y = 0;
   var MAX_FUEL = 30;
   var MAX_DOCK_SPEED = 22;
-
-  // Угловая скорость орбиты. Увеличена, чтобы кривизна была видна сразу.
-  var N = 0.09;
+  var N = 0.09; // угловая скорость орбиты (учебная)
 
   // ---------- DOM ----------
   var canvas = document.getElementById('scene');
@@ -21,6 +19,7 @@
   var msgEl = document.getElementById('msg');
   var hudDist = document.getElementById('hud-dist');
   var hudSpeed = document.getElementById('hud-speed');
+  var hudRange = document.getElementById('hud-range');
   var hudTime = document.getElementById('hud-time');
   var hudDv = document.getElementById('hud-dv');
   var hudStatus = document.getElementById('hud-status');
@@ -38,6 +37,7 @@
   var vAng = document.getElementById('v-ang');
 
   var btnStart = document.getElementById('btn-start');
+  var btnBurn = document.getElementById('btn-burn');
   var btnReset = document.getElementById('btn-reset');
 
   // ---------- Состояние ----------
@@ -47,12 +47,12 @@
     t: 0,
     step: 0,
     ship: { x: START_X, y: START_Y, vx: 0, vy: 0 },
-    impulse: { dv: 0, ang: 0 },
-    applied: false,
+    applied: false,       // был ли применён стартовый импульс
     totalDv: 0,
     fuel: MAX_FUEL,
-    burnTimer: 0,
-    trail: []
+    burnTimer: 0,         // отображение пламени
+    trail: [],
+    cam: { x: 0, y: 0 }   // смещение камеры (экранные единицы, "мир")
   };
 
   // ---------- Размер canvas ----------
@@ -67,11 +67,14 @@
     draw();
   }
 
-  // ---------- Координаты ----------
+  // ---------- Координаты (с учётом камеры) ----------
   function toScreen(x, y) {
     var w = canvas.clientWidth;
     var h = canvas.clientHeight;
-    return { x: w / 2 + x * SCALE, y: h / 2 - y * SCALE };
+    return {
+      x: w / 2 + (x - state.cam.x) * SCALE,
+      y: h / 2 - (y - state.cam.y) * SCALE
+    };
   }
 
   // ---------- Ползунки ----------
@@ -94,13 +97,6 @@
     };
   }
 
-  function readImpulse() {
-    return {
-      dv: parseFloat(sDv.value),
-      ang: parseFloat(sAng.value)
-    };
-  }
-
   // ---------- Сброс ----------
   function resetRound(resetSliders) {
     state.running = false;
@@ -112,6 +108,8 @@
     state.totalDv = 0;
     state.fuel = MAX_FUEL;
     state.burnTimer = 0;
+    state.cam.x = 0;
+    state.cam.y = 0;
 
     if (resetSliders) {
       sSpeed.value = 30;
@@ -127,14 +125,12 @@
     state.ship.vx = sc.vx;
     state.ship.vy = sc.vy;
 
-    var imp = readImpulse();
-    state.impulse.dv = imp.dv;
-    state.impulse.ang = imp.ang;
-
     msgEl.className = 'msg';
     msgEl.textContent = '';
     hudStatus.textContent = 'ожидание';
     hudStatus.style.color = '';
+    btnBurn.disabled = true;
+
     updateHud();
     updateFuel();
     draw();
@@ -144,58 +140,66 @@
   function startSim() {
     if (state.running) return;
     resetRound(false);
+
+    // Одноразовый стартовый импульс из ползунков ΔV и угла
+    var dv0 = parseFloat(sDv.value);
+    var ang0 = parseFloat(sAng.value);
+    if (dv0 > state.fuel) dv0 = state.fuel;
+    if (dv0 > 0) {
+      var rad = ang0 * Math.PI / 180;
+      state.ship.vx += dv0 * Math.cos(rad);
+      state.ship.vy += dv0 * Math.sin(rad);
+      state.totalDv += dv0;
+      state.fuel -= dv0;
+      state.burnTimer = 0.4;
+    }
+    state.applied = true;
+
     state.running = true;
     state.finished = false;
     hudStatus.textContent = 'полёт';
     hudStatus.style.color = '#4da6ff';
     msgEl.className = 'msg';
     msgEl.textContent = '';
+    btnBurn.disabled = false;
+    updateFuel();
     requestAnimationFrame(loop);
   }
 
-  // ---------- Физика (HCW) ----------
-  // Экранные оси:
-  //   X_screen — от аппарата к станции (это HCW-Y, трансверсаль).
-  //   Y_screen — вверх (это −HCW-X, радиаль от Земли).
-  //
-  // Уравнения HCW:
-  //   x'' = 3n²·x + 2n·y'
-  //   y'' = −2n·x'
-  //
-  // Переведём в экранные переменные:
-  //   xHCW = −y_screen,  yHCW = x_screen
-  //   vxHCW = −vy_screen, vyHCW = vx_screen
-  //
-  // Тогда:
-  //   axHCW = 3n²·(−y_screen) + 2n·vx_screen
-  //   ayHCW = −2n·(−vy_screen) = 2n·vy_screen
-  //
-  // Обратно в экранные:
-  //   ax_screen =  ayHCW
-  //   ay_screen = −axHCW
+  // ---------- Импульс в полёте ----------
+  function burnNow() {
+    if (!state.running || state.finished) return;
+    var dv = parseFloat(sDv.value);
+    var ang = parseFloat(sAng.value);
+    if (dv <= 0) return;
+    if (dv > state.fuel) dv = state.fuel;
+    if (dv <= 0) return;
 
+    // Угол импульса трактуем в системе «относительно текущего движения».
+    // 0° — вперёд по движению, 180° — назад (торможение), ±90° — поперёк.
+    var shipAngle = Math.atan2(state.ship.vy, state.ship.vx);
+    if (state.ship.vx === 0 && state.ship.vy === 0) shipAngle = 0;
+    var rad = shipAngle + ang * Math.PI / 180;
+
+    state.ship.vx += dv * Math.cos(rad);
+    state.ship.vy += dv * Math.sin(rad);
+    state.totalDv += dv;
+    state.fuel -= dv;
+    state.burnTimer = 0.4;
+    updateFuel();
+    updateHud();
+  }
+
+  // ---------- Физика (HCW) ----------
   function stepPhysics() {
     if (state.finished) return;
 
-    if (!state.applied) {
-      var rad = state.impulse.ang * Math.PI / 180;
-      var dv = state.impulse.dv;
-      if (dv > state.fuel) dv = state.fuel;
-      if (dv > 0) {
-        state.ship.vx += dv * Math.cos(rad);
-        state.ship.vy += dv * Math.sin(rad);
-        state.totalDv += dv;
-        state.fuel -= dv;
-        state.burnTimer = 0.4;
-        if (state.fuel < 0) state.fuel = 0;
-      }
-      state.applied = true;
-      updateFuel();
-    }
-
     var n = N;
-    var axHCW = 3 * n * n * (-state.ship.y) + 2 * n * state.ship.vx;
-    var ayHCW = 2 * n * state.ship.vy;
+    // xHCW = -y_screen, yHCW = x_screen
+    // axHCW = 3n²·xHCW + 2n·vyHCW, ayHCW = -2n·vxHCW
+    var vxHCW = -state.ship.vy;
+    var axHCW = 3 * n * n * (-state.ship.y) + 2 * n * vxHCW;
+    var ayHCW = -2 * n * state.ship.vx;
 
     var axScreen = ayHCW;
     var ayScreen = -axHCW;
@@ -215,9 +219,30 @@
       if (state.trail.length > 900) state.trail.shift();
     }
 
+    updateCamera();
     checkResult();
   }
 
+  // ---------- Камера ----------
+  function updateCamera() {
+    // Целевая точка — середина между станцией и аппаратом,
+    // с ограничением, чтобы станция не ушла далеко от центра.
+    var tx = state.ship.x * 0.55; // 0.55 от аппарата, а не 0.5 — станция чуть смещается к краю
+    var ty = state.ship.y * 0.55;
+
+    // Ограничение: не отъезжать слишком далеко от станции
+    var maxCam = 260;
+    if (tx > maxCam) tx = maxCam;
+    if (tx < -maxCam) tx = -maxCam;
+    if (ty > maxCam) ty = maxCam;
+    if (ty < -maxCam) ty = -maxCam;
+
+    // Плавное следование
+    state.cam.x += (tx - state.cam.x) * 0.08;
+    state.cam.y += (ty - state.cam.y) * 0.08;
+  }
+
+  // ---------- Проверка результата ----------
   function checkResult() {
     var dx = state.ship.x;
     var dy = state.ship.y;
@@ -249,16 +274,32 @@
     hudStatus.style.color = ok ? '#4cd964' : '#ff4d4d';
     msgEl.className = 'msg show ' + (ok ? 'ok' : 'err');
     msgEl.textContent = text;
+    btnBurn.disabled = true;
     updateHud();
     draw();
   }
 
   // ---------- HUD ----------
   function updateHud() {
-    var dist = Math.sqrt(state.ship.x * state.ship.x + state.ship.y * state.ship.y);
+    var dx = state.ship.x;
+    var dy = state.ship.y;
+    var dist = Math.sqrt(dx * dx + dy * dy);
     var speed = Math.sqrt(state.ship.vx * state.ship.vx + state.ship.vy * state.ship.vy);
+
+    // Скорость сближения = проекция скорости на направление к станции
+    var rangeRate = 0;
+    if (dist > 0.001) {
+      var nx = dx / dist;
+      var ny = dy / dist;
+      // Направление к станции = -n, где n — от аппарата к станции... осторожно.
+      // Вектор от аппарата к станции: (-dx, -dy)/dist.
+      rangeRate = (state.ship.vx * (-nx)) + (state.ship.vy * (-ny));
+      // Отрицательное значение = приближаемся. Возьмём модуль для наглядности.
+    }
+
     hudDist.textContent = dist.toFixed(1);
     hudSpeed.textContent = speed.toFixed(1);
+    hudRange.textContent = (-rangeRate).toFixed(1);
     hudTime.textContent = state.t.toFixed(1);
     hudDv.textContent = state.totalDv.toFixed(1);
   }
@@ -289,6 +330,51 @@
       ctx.arc(s.x * w, s.y * h, s.r, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  function drawGrid() {
+    var w = canvas.clientWidth;
+    var h = canvas.clientHeight;
+    var stepPx = 40; // пикселей
+
+    var originScreen = toScreen(0, 0);
+    var startX = originScreen.x % stepPx;
+    var startY = originScreen.y % stepPx;
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(120, 160, 220, 0.10)';
+    ctx.lineWidth = 1;
+
+    for (var x = startX; x < w; x += stepPx) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
+    for (var y = startY; y < h; y += stepPx) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+
+    // Оси V-bar / R-bar
+    ctx.strokeStyle = 'rgba(160, 210, 255, 0.35)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(0, originScreen.y);
+    ctx.lineTo(w, originScreen.y);
+    ctx.moveTo(originScreen.x, 0);
+    ctx.lineTo(originScreen.x, h);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(160, 210, 255, 0.55)';
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('V-bar', 8, originScreen.y - 6);
+    ctx.textAlign = 'left';
+    ctx.fillText('R-bar', originScreen.x + 6, 14);
+    ctx.restore();
   }
 
   function drawStation(cx, cy) {
@@ -490,12 +576,57 @@
     ctx.closePath();
   }
 
+  // Стрелка-указатель на станцию, если она ушла за край
+  function drawStationPointer() {
+    var w = canvas.clientWidth;
+    var h = canvas.clientHeight;
+    var st = toScreen(0, 0);
+    var margin = 24;
+
+    var visible = st.x > margin && st.x < w - margin && st.y > margin && st.y < h - margin;
+    if (visible) return;
+
+    var cx = w / 2;
+    var cy = h / 2;
+    var dx = st.x - cx;
+    var dy = st.y - cy;
+    var ang = Math.atan2(dy, dx);
+
+    // Точка на границе с отступом
+    var rx = w / 2 - margin;
+    var ry = h / 2 - margin;
+    var t = Math.min(Math.abs(rx / (Math.cos(ang) || 0.001)),
+                     Math.abs(ry / (Math.sin(ang) || 0.001)));
+    var px = cx + Math.cos(ang) * t;
+    var py = cy + Math.sin(ang) * t;
+
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(ang);
+
+    ctx.fillStyle = 'rgba(255,184,77,0.9)';
+    ctx.beginPath();
+    ctx.moveTo(10, 0);
+    ctx.lineTo(-6, -6);
+    ctx.lineTo(-6, 6);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+
+    ctx.fillStyle = 'rgba(255,184,77,0.9)';
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('СТАНЦИЯ', px, py + 18);
+  }
+
   function draw() {
     var w = canvas.clientWidth;
     var h = canvas.clientHeight;
     ctx.clearRect(0, 0, w, h);
 
     drawStars(w, h);
+    drawGrid();
 
     var st = toScreen(0, 0);
 
@@ -504,24 +635,21 @@
     var inDock = dist <= DOCK_R;
     var okSpeed = speed <= MAX_DOCK_SPEED;
 
-    var corridorLen = 320;
-    var corridorHalf = 40;
-    var c1 = toScreen(-corridorLen, corridorHalf);
-    var c2 = toScreen(-corridorLen, -corridorHalf);
-    var c3 = toScreen(0, -corridorHalf);
-    var c4 = toScreen(0, corridorHalf);
+    // Коридор — расширенная зона сближения (вокруг станции)
+    ctx.save();
+    ctx.translate(st.x, st.y);
     ctx.beginPath();
-    ctx.moveTo(c1.x, c1.y);
-    ctx.lineTo(c2.x, c2.y);
-    ctx.lineTo(c3.x, c3.y);
-    ctx.lineTo(c4.x, c4.y);
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, 320 * SCALE * 0.4, Math.PI * 0.7, Math.PI * 1.3);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(76, 217, 100, 0.06)';
-    ctx.strokeStyle = 'rgba(76, 217, 100, 0.25)';
+    ctx.fillStyle = 'rgba(76, 217, 100, 0.05)';
     ctx.fill();
+    ctx.strokeStyle = 'rgba(76, 217, 100, 0.20)';
     ctx.lineWidth = 1;
     ctx.stroke();
+    ctx.restore();
 
+    // Радиус стыковки
     var dockStroke = 'rgba(76, 217, 100, 0.5)';
     var dockFill = null;
     if (inDock && okSpeed) {
@@ -545,6 +673,7 @@
     ctx.stroke();
     ctx.setLineDash([]);
 
+    // След
     if (state.trail.length > 1) {
       ctx.beginPath();
       for (var k = 0; k < state.trail.length; k++) {
@@ -571,6 +700,8 @@
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
+
+    drawStationPointer();
   }
 
   function loop() {
@@ -583,20 +714,18 @@
     if (state.running) requestAnimationFrame(loop);
   }
 
+  // ---------- Корректировка ----------
   function nudge(dvDelta, angDelta) {
     var dv = parseFloat(sDv.value) + dvDelta;
     dv = Math.min(30, Math.max(0, dv));
     sDv.value = dv;
 
     var ang = parseFloat(sAng.value) + angDelta;
-    while (ang > 90) ang -= 180;
-    while (ang < -90) ang += 180;
+    while (ang > 180) ang -= 360;
+    while (ang < -180) ang += 360;
     sAng.value = ang;
 
     syncOutputs();
-    if (state.running) {
-      state.impulse.ang = ang;
-    }
   }
 
   function holdButton(id, fn) {
@@ -618,24 +747,13 @@
     el.addEventListener('touchcancel', stop);
   }
 
-  sSpeed.addEventListener('input', function () {
-    syncOutputs();
-    if (!state.running) resetRound(false);
-  });
-  sDir.addEventListener('input', function () {
-    syncOutputs();
-    if (!state.running) resetRound(false);
-  });
-  sDv.addEventListener('input', function () {
-    syncOutputs();
-    if (!state.running) resetRound(false);
-  });
-  sAng.addEventListener('input', function () {
-    syncOutputs();
-    if (!state.running) resetRound(false);
-  });
+  sSpeed.addEventListener('input', function () { syncOutputs(); if (!state.running) resetRound(false); });
+  sDir.addEventListener('input', function () { syncOutputs(); if (!state.running) resetRound(false); });
+  sDv.addEventListener('input', function () { syncOutputs(); });
+  sAng.addEventListener('input', function () { syncOutputs(); });
 
   btnStart.addEventListener('click', startSim);
+  btnBurn.addEventListener('click', burnNow);
   btnReset.addEventListener('click', function () {
     state.running = false;
     resetRound(true);
@@ -653,13 +771,10 @@
       case 'ArrowUp': nudge(1, 0); e.preventDefault(); break;
       case 'ArrowDown': nudge(-1, 0); e.preventDefault(); break;
       case ' ': startSim(); e.preventDefault(); break;
-      case 'r':
-      case 'R':
-      case 'к':
-      case 'К':
-        state.running = false;
-        resetRound(true);
-        break;
+      case 'b': case 'B': case 'и': case 'И':
+        burnNow(); e.preventDefault(); break;
+      case 'r': case 'R': case 'к': case 'К':
+        state.running = false; resetRound(true); break;
     }
   });
 
