@@ -2,29 +2,18 @@
   'use strict';
 
   // ---------- Константы модели ----------
-  // Единицы: 1 усл.ед. ≈ 1 м (в учебных целях), 1 усл.ед. скорости ≈ 1 м/с.
-  // Движение в системе отсчёта станции, на круговой орбите.
-  // Модель Хилла–Клохесси–Уилтшира (HCW):
-  //   x'' = 3 n² x + 2 n y'
-  //   y'' = -2 n x'
-  // где x — радиальное направление (к Земле), y — трансверсальное (по движению).
-  // В нашей визуализации ось X экрана — от аппарата к станции (то есть "y" в HCW),
-  // ось Y экрана — "x" в HCW со знаком минус (вверх = от Земли).
-  // Это даёт красивые криволинейные траектории, как у реальных кораблей.
-
   var SCALE = 1.6;
   var STATION_R = 18;
   var DOCK_R = 42;
-  var DT = 0.05;            // шаг модельного времени, с
-  var MAX_STEPS = 2400;     // ~120 с модельного времени
+  var DT = 0.05;
+  var MAX_STEPS = 2400;
   var START_X = -220;
   var START_Y = 0;
   var MAX_FUEL = 30;
   var MAX_DOCK_SPEED = 22;
 
-  // Угловая скорость орбиты. Подобрана так, чтобы за ~60–120 с
-  // аппарат проходил красивые дуги. Для наглядности n довольно большое.
-  var N = 0.035; // рад/с (учебное значение, больше реального)
+  // Угловая скорость орбиты. Увеличена, чтобы кривизна была видна сразу.
+  var N = 0.09;
 
   // ---------- DOM ----------
   var canvas = document.getElementById('scene');
@@ -57,7 +46,6 @@
     finished: false,
     t: 0,
     step: 0,
-    // Позиция и скорость в системе станции (учебные единицы)
     ship: { x: START_X, y: START_Y, vx: 0, vy: 0 },
     impulse: { dv: 0, ang: 0 },
     applied: false,
@@ -165,16 +153,34 @@
     requestAnimationFrame(loop);
   }
 
-  // ---------- Физика (уравнения HCW) ----------
+  // ---------- Физика (HCW) ----------
+  // Экранные оси:
+  //   X_screen — от аппарата к станции (это HCW-Y, трансверсаль).
+  //   Y_screen — вверх (это −HCW-X, радиаль от Земли).
+  //
+  // Уравнения HCW:
+  //   x'' = 3n²·x + 2n·y'
+  //   y'' = −2n·x'
+  //
+  // Переведём в экранные переменные:
+  //   xHCW = −y_screen,  yHCW = x_screen
+  //   vxHCW = −vy_screen, vyHCW = vx_screen
+  //
+  // Тогда:
+  //   axHCW = 3n²·(−y_screen) + 2n·vx_screen
+  //   ayHCW = −2n·(−vy_screen) = 2n·vy_screen
+  //
+  // Обратно в экранные:
+  //   ax_screen =  ayHCW
+  //   ay_screen = −axHCW
+
   function stepPhysics() {
     if (state.finished) return;
 
     if (!state.applied) {
       var rad = state.impulse.ang * Math.PI / 180;
       var dv = state.impulse.dv;
-
       if (dv > state.fuel) dv = state.fuel;
-
       if (dv > 0) {
         state.ship.vx += dv * Math.cos(rad);
         state.ship.vy += dv * Math.sin(rad);
@@ -187,34 +193,15 @@
       updateFuel();
     }
 
-    // --- HCW ---
-    // Ось X экрана: от аппарата к станции = трансверсальное направление.
-    // Ось Y экрана: вверх = "x" HCW.
-    // В HCW: x'' = 3n²x + 2n y',  y'' = -2n x'
-    // Обозначим:
-    //   xC = -state.ship.y  (HCW x)
-    //   yC =  state.ship.x  (HCW y)
-    //   vxC = -state.ship.vy
-    //   vyC =  state.ship.vx
-    // Тогда ускорения в HCW:
     var n = N;
-    var axC = 3 * n * n * (-state.ship.y) + 2 * n * state.ship.vx;
-    var ayC = -2 * n * (-state.ship.vy);
+    var axHCW = 3 * n * n * (-state.ship.y) + 2 * n * state.ship.vx;
+    var ayHCW = 2 * n * state.ship.vy;
 
-    // Переводим ускорения обратно в экранные координаты:
-    //   ax_screen =  ayC
-    //   ay_screen = -axC
-    var axScreen = ayC;
-    var ayScreen = -axC;
+    var axScreen = ayHCW;
+    var ayScreen = -axHCW;
 
     state.ship.vx += axScreen * DT;
     state.ship.vy += ayScreen * DT;
-
-    // --- Дополнительно: слабое трение для устойчивости модели ---
-    // В реальности его нет, но так траектория не "разлетается" из-за
-    // больших n и крупного DT.
-    state.ship.vx *= 0.9995;
-    state.ship.vy *= 0.9995;
 
     state.ship.x += state.ship.vx * DT;
     state.ship.y += state.ship.vy * DT;
@@ -223,10 +210,9 @@
 
     if (state.burnTimer > 0) state.burnTimer -= DT;
 
-    // След: ограничиваем частоту записи, чтобы след был плавным и не перегружал
     if (state.step % 2 === 0) {
       state.trail.push({ x: state.ship.x, y: state.ship.y });
-      if (state.trail.length > 800) state.trail.shift();
+      if (state.trail.length > 900) state.trail.shift();
     }
 
     checkResult();
@@ -242,12 +228,10 @@
       finish(true, 'Успешная стыковка. Расстояние ' + dist.toFixed(1) + ', скорость ' + speed.toFixed(1) + '.');
       return;
     }
-    // Границы зоны
-    if (Math.abs(state.ship.x) > 900 || Math.abs(state.ship.y) > 700) {
+    if (Math.abs(state.ship.x) > 1200 || Math.abs(state.ship.y) > 900) {
       finish(false, 'Аппарат ушёл за пределы зоны. Расстояние ' + dist.toFixed(1) + '.');
       return;
     }
-    // Столкновение со станцией на большой скорости
     if (dist < STATION_R * 0.6) {
       finish(false, 'Столкновение со станцией! Скорость ' + speed.toFixed(1) + '.');
       return;
@@ -520,7 +504,6 @@
     var inDock = dist <= DOCK_R;
     var okSpeed = speed <= MAX_DOCK_SPEED;
 
-    // Коридор — расширенная зона сближения
     var corridorLen = 320;
     var corridorHalf = 40;
     var c1 = toScreen(-corridorLen, corridorHalf);
@@ -539,7 +522,6 @@
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // Радиус стыковки
     var dockStroke = 'rgba(76, 217, 100, 0.5)';
     var dockFill = null;
     if (inDock && okSpeed) {
@@ -563,7 +545,6 @@
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // След
     if (state.trail.length > 1) {
       ctx.beginPath();
       for (var k = 0; k < state.trail.length; k++) {
@@ -592,7 +573,6 @@
     }
   }
 
-  // ---------- Цикл ----------
   function loop() {
     if (!state.running) return;
     for (var i = 0; i < 2; i++) {
@@ -603,7 +583,6 @@
     if (state.running) requestAnimationFrame(loop);
   }
 
-  // ---------- Корректировка ----------
   function nudge(dvDelta, angDelta) {
     var dv = parseFloat(sDv.value) + dvDelta;
     dv = Math.min(30, Math.max(0, dv));
@@ -639,7 +618,6 @@
     el.addEventListener('touchcancel', stop);
   }
 
-  // ---------- Обработчики ----------
   sSpeed.addEventListener('input', function () {
     syncOutputs();
     if (!state.running) resetRound(false);
@@ -687,7 +665,6 @@
 
   window.addEventListener('resize', resize);
 
-  // ---------- Старт ----------
   syncOutputs();
   resetRound(true);
   resize();
