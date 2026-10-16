@@ -1,786 +1,467 @@
-(function () {
-  'use strict';
+// ============================================================
+// Данные: уровни и спутники
+// ============================================================
 
-  // ---------- Константы ----------
-  var SCALE = 1.6;
-  var STATION_R = 18;
-  var DOCK_R = 42;
-  var DT = 0.05;
-  var MAX_STEPS = 2400;
-  var START_X = -220;
-  var START_Y = 0;
-  var MAX_FUEL = 30;
-  var MAX_DOCK_SPEED = 22;
-  var N = 0.09; // угловая скорость орбиты (учебная)
+const LEVELS = [
+  {
+    id: 'free', name: 'Свободный полёт',
+    description: 'Тренировка без цели',
+    distance: 220, speed: 30, fuel: 30, timeLimit: 0,
+    stars: { time: 0, fuel: 0, precision: 0 },
+    objective: 'Свободная тренировка'
+  },
+  {
+    id: 'easy', name: 'Миссия 1: Первое сближение',
+    description: 'Много топлива, медленный дрейф',
+    distance: 200, speed: 20, fuel: 40, timeLimit: 0,
+    stars: { time: 120, fuel: 10, precision: 5 },
+    objective: 'Стыковка: дистанция < 5 м, скорость < 0.5 м/с'
+  },
+  {
+    id: 'normal', name: 'Миссия 2: V-bar подход',
+    description: 'Стандартная стыковка по оси V',
+    distance: 180, speed: 25, fuel: 30, timeLimit: 180,
+    stars: { time: 150, fuel: 8, precision: 3 },
+    objective: 'Подойти по V-bar, мягкий контакт'
+  },
+  {
+    id: 'hard', name: 'Миссия 3: R-bar подход',
+    description: 'Подход снизу, меньше топлива',
+    distance: 160, speed: 28, fuel: 22, timeLimit: 150,
+    stars: { time: 120, fuel: 5, precision: 2 },
+    objective: 'Подойти по R-bar, удержать позицию'
+  },
+  {
+    id: 'expert', name: 'Миссия 4: Вращающаяся станция',
+    description: 'Станция дрейфует и вращается',
+    distance: 150, speed: 30, fuel: 18, timeLimit: 120,
+    stars: { time: 90, fuel: 4, precision: 1.5 },
+    objective: 'Стыковка с вращающейся станцией',
+    rotating: true, drift: 0.05
+  },
+  {
+    id: 'emergency', name: 'Миссия 5: Аварийная стыковка',
+    description: 'Мало топлива, мало времени',
+    distance: 140, speed: 35, fuel: 12, timeLimit: 90,
+    stars: { time: 70, fuel: 3, precision: 1 },
+    objective: 'Успеть до закрытия окна',
+    rotating: true, drift: 0.08
+  }
+];
 
-  // ---------- DOM ----------
-  var canvas = document.getElementById('scene');
-  var ctx = canvas.getContext('2d');
-  var msgEl = document.getElementById('msg');
-  var hudDist = document.getElementById('hud-dist');
-  var hudSpeed = document.getElementById('hud-speed');
-  var hudRange = document.getElementById('hud-range');
-  var hudTime = document.getElementById('hud-time');
-  var hudDv = document.getElementById('hud-dv');
-  var hudStatus = document.getElementById('hud-status');
-  var fuelNum = document.getElementById('fuel-num');
-  var fuelFill = document.getElementById('fuel-fill');
+const SATELLITES = [
+  { id: 'soyuz', name: 'Союз МС', description: 'Классический корабль, сбалансирован',
+    thrust: 1.0, fuel: 1.0, agility: 1.0, color: '#7ec8ff' },
+  { id: 'progress', name: 'Прогресс МС', description: 'Грузовик: много топлива, медленный',
+    thrust: 0.8, fuel: 1.5, agility: 0.7, color: '#9dd68a' },
+  { id: 'dragon', name: 'Crew Dragon', description: 'Современный: быстрый, но прожорливый',
+    thrust: 1.3, fuel: 0.8, agility: 1.4, color: '#ffd75e' },
+  { id: 'tianzhou', name: 'Тяньчжоу', description: 'Тяжёлый грузовик, очень экономичный',
+    thrust: 0.7, fuel: 1.8, agility: 0.6, color: '#ff8fa3' },
+  { id: 'cygnus', name: 'Cygnus', description: 'Баланс между грузом и манёвром',
+    thrust: 1.0, fuel: 1.2, agility: 1.0, color: '#b48aff' }
+];
 
-  var sSpeed = document.getElementById('s-speed');
-  var sDir = document.getElementById('s-dir');
-  var vSpeed = document.getElementById('v-speed');
-  var vDir = document.getElementById('v-dir');
+// ============================================================
+// Состояние игры
+// ============================================================
 
-  var sDv = document.getElementById('s-dv');
-  var sAng = document.getElementById('s-ang');
-  var vDv = document.getElementById('v-dv');
-  var vAng = document.getElementById('v-ang');
+const state = {
+  level: LEVELS[0],
+  satellite: SATELLITES[0],
+  dist: 220, speed: 30, closing: -30,
+  time: 0, dv: 0, angle: 0,
+  fuel: 30, fuelMax: 30,
+  running: false, impulseQueued: false,
+  stars: [false, false, false],
+  history: [],
+  rotationPhase: 0, drift: 0,
+  message: ''
+};
 
-  var btnStart = document.getElementById('btn-start');
-  var btnBurn = document.getElementById('btn-burn');
-  var btnReset = document.getElementById('btn-reset');
+// ============================================================
+// Canvas
+// ============================================================
 
-  // ---------- Состояние ----------
-  var state = {
-    running: false,
-    finished: false,
-    t: 0,
-    step: 0,
-    ship: { x: START_X, y: START_Y, vx: 0, vy: 0 },
-    applied: false,       // был ли применён стартовый импульс
-    totalDv: 0,
-    fuel: MAX_FUEL,
-    burnTimer: 0,         // отображение пламени
-    trail: [],
-    cam: { x: 0, y: 0 }   // смещение камеры (экранные единицы, "мир")
-  };
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0, DPR = Math.min(window.devicePixelRatio || 1, 2);
 
-  // ---------- Размер canvas ----------
-  function resize() {
-    var wrap = canvas.parentElement;
-    var dpr = window.devicePixelRatio || 1;
-    var w = wrap.clientWidth;
-    var h = wrap.clientHeight;
-    canvas.width = Math.round(w * dpr);
-    canvas.height = Math.round(h * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    draw();
+function resize() {
+  W = canvas.clientWidth;
+  H = canvas.clientHeight;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', resize);
+
+// ============================================================
+// HUD / панели
+// ============================================================
+
+const hud = {
+  dist: document.getElementById('hud-dist'),
+  speed: document.getElementById('hud-speed'),
+  closing: document.getElementById('hud-closing'),
+  time: document.getElementById('hud-time'),
+  dv: document.getElementById('hud-dv'),
+  fuel: document.getElementById('hud-fuel')
+};
+
+function updateHUD() {
+  hud.dist.textContent = state.dist.toFixed(1);
+  hud.speed.textContent = state.speed.toFixed(1);
+  hud.closing.textContent = state.closing.toFixed(1);
+  hud.time.textContent = state.time.toFixed(1);
+  hud.dv.textContent = state.dv.toFixed(1);
+  hud.fuel.textContent = state.fuel.toFixed(1) + ' / ' + state.fuelMax.toFixed(1);
+}
+
+function updateStars() {
+  document.querySelectorAll('.star').forEach((el, i) => {
+    el.classList.toggle('filled', !!state.stars[i]);
+  });
+}
+
+function updateMissionPanel() {
+  document.getElementById('mission-name').textContent = state.level.name;
+  document.getElementById('objective').textContent = state.level.objective;
+}
+
+// ============================================================
+// Запуск уровня
+// ============================================================
+
+function startLevel(level, satellite) {
+  state.level = level;
+  state.satellite = satellite;
+  state.dist = level.distance;
+  state.speed = level.speed;
+  state.closing = -level.speed;
+  state.time = 0;
+  state.dv = 0;
+  state.angle = 0;
+  state.fuelMax = level.fuel * satellite.fuel;
+  state.fuel = state.fuelMax;
+  state.running = false;
+  state.impulseQueued = false;
+  state.stars = [false, false, false];
+  state.history = [];
+  state.rotationPhase = 0;
+  state.drift = 0;
+  state.message = '';
+
+  updateHUD();
+  updateStars();
+  updateMissionPanel();
+  draw();
+}
+
+// ============================================================
+// Физика
+// ============================================================
+
+const DT = 0.1;
+
+function physicsStep() {
+  if (!state.running) return;
+
+  // Дрейф / вращение
+  if (state.level.drift) {
+    state.drift += state.level.drift * DT * 0.1;
+    state.dist += Math.sin(state.drift) * 0.3;
+  }
+  if (state.level.rotating) state.rotationPhase += 0.02;
+
+  // Импульс
+  if (state.impulseQueued) {
+    applyImpulse();
+    state.impulseQueued = false;
   }
 
-  // ---------- Координаты (с учётом камеры) ----------
-  function toScreen(x, y) {
-    var w = canvas.clientWidth;
-    var h = canvas.clientHeight;
-    return {
-      x: w / 2 + (x - state.cam.x) * SCALE,
-      y: h / 2 - (y - state.cam.y) * SCALE
-    };
-  }
+  // Упрощённая модель HCW
+  state.dist -= state.speed * DT * 0.5;
+  state.closing = -state.speed;
+  state.speed *= 0.999;
+  state.time += DT;
 
-  // ---------- Ползунки ----------
-  function syncOutputs() {
-    vSpeed.textContent = parseFloat(sSpeed.value).toFixed(0);
-    vDir.textContent = parseFloat(sDir.value).toFixed(0) + '°';
-    vDv.textContent = parseFloat(sDv.value).toFixed(1);
-    vAng.textContent = parseFloat(sAng.value).toFixed(0) + '°';
-  }
+  // Запись траектории
+  state.history.push({ d: state.dist, s: state.speed, t: state.time });
+  if (state.history.length > 400) state.history.shift();
 
-  function readStartConditions() {
-    var speed = parseFloat(sSpeed.value);
-    var dir = parseFloat(sDir.value);
-    var rad = dir * Math.PI / 180;
-    return {
-      x: START_X,
-      y: START_Y,
-      vx: speed * Math.cos(rad),
-      vy: speed * Math.sin(rad)
-    };
-  }
+  checkWin();
 
-  // ---------- Сброс ----------
-  function resetRound(resetSliders) {
+  if (state.level.timeLimit && state.time > state.level.timeLimit && !state.message) {
     state.running = false;
-    state.finished = false;
-    state.t = 0;
-    state.step = 0;
-    state.trail = [];
-    state.applied = false;
-    state.totalDv = 0;
-    state.fuel = MAX_FUEL;
-    state.burnTimer = 0;
-    state.cam.x = 0;
-    state.cam.y = 0;
-
-    if (resetSliders) {
-      sSpeed.value = 30;
-      sDir.value = 0;
-      sDv.value = 0;
-      sAng.value = 0;
-      syncOutputs();
-    }
-
-    var sc = readStartConditions();
-    state.ship.x = sc.x;
-    state.ship.y = sc.y;
-    state.ship.vx = sc.vx;
-    state.ship.vy = sc.vy;
-
-    msgEl.className = 'msg';
-    msgEl.textContent = '';
-    hudStatus.textContent = 'ожидание';
-    hudStatus.style.color = '';
-    btnBurn.disabled = true;
-
-    updateHud();
-    updateFuel();
-    draw();
+    state.message = 'Время вышло';
   }
 
-  // ---------- Старт ----------
-  function startSim() {
-    if (state.running) return;
-    resetRound(false);
+  updateHUD();
+}
 
-    // Одноразовый стартовый импульс из ползунков ΔV и угла
-    var dv0 = parseFloat(sDv.value);
-    var ang0 = parseFloat(sAng.value);
-    if (dv0 > state.fuel) dv0 = state.fuel;
-    if (dv0 > 0) {
-      var rad = ang0 * Math.PI / 180;
-      state.ship.vx += dv0 * Math.cos(rad);
-      state.ship.vy += dv0 * Math.sin(rad);
-      state.totalDv += dv0;
-      state.fuel -= dv0;
-      state.burnTimer = 0.4;
-    }
-    state.applied = true;
+function applyImpulse() {
+  const sat = state.satellite;
+  const dv = state.dv * sat.thrust;
+  const rad = state.angle * Math.PI / 180;
 
-    state.running = true;
-    state.finished = false;
-    hudStatus.textContent = 'полёт';
-    hudStatus.style.color = '#4da6ff';
-    msgEl.className = 'msg';
-    msgEl.textContent = '';
-    btnBurn.disabled = false;
-    updateFuel();
-    requestAnimationFrame(loop);
-  }
+  const forward = -Math.cos(rad) * dv;
+  const lateral = Math.sin(rad) * dv;
 
-  // ---------- Импульс в полёте ----------
-  function burnNow() {
-    if (!state.running || state.finished) return;
-    var dv = parseFloat(sDv.value);
-    var ang = parseFloat(sAng.value);
-    if (dv <= 0) return;
-    if (dv > state.fuel) dv = state.fuel;
-    if (dv <= 0) return;
+  state.speed += forward;
+  state.dist += lateral * 0.5;
 
-    // Угол импульса трактуем в системе «относительно текущего движения».
-    // 0° — вперёд по движению, 180° — назад (торможение), ±90° — поперёк.
-    var shipAngle = Math.atan2(state.ship.vy, state.ship.vx);
-    if (state.ship.vx === 0 && state.ship.vy === 0) shipAngle = 0;
-    var rad = shipAngle + ang * Math.PI / 180;
-
-    state.ship.vx += dv * Math.cos(rad);
-    state.ship.vy += dv * Math.sin(rad);
-    state.totalDv += dv;
-    state.fuel -= dv;
-    state.burnTimer = 0.4;
-    updateFuel();
-    updateHud();
-  }
-
-  // ---------- Физика (HCW) ----------
-  function stepPhysics() {
-    if (state.finished) return;
-
-    var n = N;
-    // xHCW = -y_screen, yHCW = x_screen
-    // axHCW = 3n²·xHCW + 2n·vyHCW, ayHCW = -2n·vxHCW
-    var vxHCW = -state.ship.vy;
-    var axHCW = 3 * n * n * (-state.ship.y) + 2 * n * vxHCW;
-    var ayHCW = -2 * n * state.ship.vx;
-
-    var axScreen = ayHCW;
-    var ayScreen = -axHCW;
-
-    state.ship.vx += axScreen * DT;
-    state.ship.vy += ayScreen * DT;
-
-    state.ship.x += state.ship.vx * DT;
-    state.ship.y += state.ship.vy * DT;
-    state.t += DT;
-    state.step++;
-
-    if (state.burnTimer > 0) state.burnTimer -= DT;
-
-    if (state.step % 2 === 0) {
-      state.trail.push({ x: state.ship.x, y: state.ship.y });
-      if (state.trail.length > 900) state.trail.shift();
-    }
-
-    updateCamera();
-    checkResult();
-  }
-
-  // ---------- Камера ----------
-  function updateCamera() {
-    // Целевая точка — середина между станцией и аппаратом,
-    // с ограничением, чтобы станция не ушла далеко от центра.
-    var tx = state.ship.x * 0.55; // 0.55 от аппарата, а не 0.5 — станция чуть смещается к краю
-    var ty = state.ship.y * 0.55;
-
-    // Ограничение: не отъезжать слишком далеко от станции
-    var maxCam = 260;
-    if (tx > maxCam) tx = maxCam;
-    if (tx < -maxCam) tx = -maxCam;
-    if (ty > maxCam) ty = maxCam;
-    if (ty < -maxCam) ty = -maxCam;
-
-    // Плавное следование
-    state.cam.x += (tx - state.cam.x) * 0.08;
-    state.cam.y += (ty - state.cam.y) * 0.08;
-  }
-
-  // ---------- Проверка результата ----------
-  function checkResult() {
-    var dx = state.ship.x;
-    var dy = state.ship.y;
-    var dist = Math.sqrt(dx * dx + dy * dy);
-    var speed = Math.sqrt(state.ship.vx * state.ship.vx + state.ship.vy * state.ship.vy);
-
-    if (dist <= DOCK_R && speed <= MAX_DOCK_SPEED) {
-      finish(true, 'Успешная стыковка. Расстояние ' + dist.toFixed(1) + ', скорость ' + speed.toFixed(1) + '.');
-      return;
-    }
-    if (Math.abs(state.ship.x) > 1200 || Math.abs(state.ship.y) > 900) {
-      finish(false, 'Аппарат ушёл за пределы зоны. Расстояние ' + dist.toFixed(1) + '.');
-      return;
-    }
-    if (dist < STATION_R * 0.6) {
-      finish(false, 'Столкновение со станцией! Скорость ' + speed.toFixed(1) + '.');
-      return;
-    }
-    if (state.step >= MAX_STEPS) {
-      finish(false, 'Время вышло. Расстояние ' + dist.toFixed(1) + ', скорость ' + speed.toFixed(1) + '.');
-      return;
-    }
-  }
-
-  function finish(ok, text) {
+  state.fuel = Math.max(0, state.fuel - Math.abs(dv) * 0.5);
+  if (state.fuel <= 0 && !state.message) {
     state.running = false;
-    state.finished = true;
-    hudStatus.textContent = ok ? 'успех' : 'неудача';
-    hudStatus.style.color = ok ? '#4cd964' : '#ff4d4d';
-    msgEl.className = 'msg show ' + (ok ? 'ok' : 'err');
-    msgEl.textContent = text;
-    btnBurn.disabled = true;
-    updateHud();
-    draw();
+    state.message = 'Топливо закончилось';
   }
+}
 
-  // ---------- HUD ----------
-  function updateHud() {
-    var dx = state.ship.x;
-    var dy = state.ship.y;
-    var dist = Math.sqrt(dx * dx + dy * dy);
-    var speed = Math.sqrt(state.ship.vx * state.ship.vx + state.ship.vy * state.ship.vy);
-
-    // Скорость сближения = проекция скорости на направление к станции
-    var rangeRate = 0;
-    if (dist > 0.001) {
-      var nx = dx / dist;
-      var ny = dy / dist;
-      // Направление к станции = -n, где n — от аппарата к станции... осторожно.
-      // Вектор от аппарата к станции: (-dx, -dy)/dist.
-      rangeRate = (state.ship.vx * (-nx)) + (state.ship.vy * (-ny));
-      // Отрицательное значение = приближаемся. Возьмём модуль для наглядности.
-    }
-
-    hudDist.textContent = dist.toFixed(1);
-    hudSpeed.textContent = speed.toFixed(1);
-    hudRange.textContent = (-rangeRate).toFixed(1);
-    hudTime.textContent = state.t.toFixed(1);
-    hudDv.textContent = state.totalDv.toFixed(1);
-  }
-
-  function updateFuel() {
-    fuelNum.textContent = state.fuel.toFixed(1) + ' / ' + MAX_FUEL;
-    var pct = Math.max(0, Math.min(1, state.fuel / MAX_FUEL));
-    fuelFill.style.width = (pct * 100).toFixed(1) + '%';
-  }
-
-  // ---------- Отрисовка ----------
-  function drawStars(w, h) {
-    if (!drawStars._stars) {
-      drawStars._stars = [];
-      for (var i = 0; i < 110; i++) {
-        drawStars._stars.push({
-          x: Math.random(),
-          y: Math.random(),
-          r: Math.random() * 1.3 + 0.2,
-          a: Math.random() * 0.6 + 0.3
-        });
-      }
-    }
-    for (var j = 0; j < drawStars._stars.length; j++) {
-      var s = drawStars._stars[j];
-      ctx.fillStyle = 'rgba(255,255,255,' + s.a + ')';
-      ctx.beginPath();
-      ctx.arc(s.x * w, s.y * h, s.r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  function drawGrid() {
-    var w = canvas.clientWidth;
-    var h = canvas.clientHeight;
-    var stepPx = 40; // пикселей
-
-    var originScreen = toScreen(0, 0);
-    var startX = originScreen.x % stepPx;
-    var startY = originScreen.y % stepPx;
-
-    ctx.save();
-    ctx.strokeStyle = 'rgba(120, 160, 220, 0.10)';
-    ctx.lineWidth = 1;
-
-    for (var x = startX; x < w; x += stepPx) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, h);
-      ctx.stroke();
-    }
-    for (var y = startY; y < h; y += stepPx) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(w, y);
-      ctx.stroke();
-    }
-
-    // Оси V-bar / R-bar
-    ctx.strokeStyle = 'rgba(160, 210, 255, 0.35)';
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.moveTo(0, originScreen.y);
-    ctx.lineTo(w, originScreen.y);
-    ctx.moveTo(originScreen.x, 0);
-    ctx.lineTo(originScreen.x, h);
-    ctx.stroke();
-
-    ctx.fillStyle = 'rgba(160, 210, 255, 0.55)';
-    ctx.font = '10px system-ui, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText('V-bar', 8, originScreen.y - 6);
-    ctx.textAlign = 'left';
-    ctx.fillText('R-bar', originScreen.x + 6, 14);
-    ctx.restore();
-  }
-
-  function drawStation(cx, cy) {
-    var r = STATION_R * SCALE * 0.5;
-
-    var glow = ctx.createRadialGradient(cx, cy, r, cx, cy, r * 3.2);
-    glow.addColorStop(0, 'rgba(255,184,77,0.30)');
-    glow.addColorStop(1, 'rgba(255,184,77,0)');
-    ctx.beginPath();
-    ctx.arc(cx, cy, r * 3.2, 0, Math.PI * 2);
-    ctx.fillStyle = glow;
-    ctx.fill();
-
-    var panelW = 52, panelH = 14;
-    drawSolarPanel(cx - r - panelW - 6, cy - panelH / 2, panelW, panelH);
-    drawSolarPanel(cx + r + 6, cy - panelH / 2, panelW, panelH);
-
-    ctx.strokeStyle = '#7d8a9c';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(cx - r, cy);
-    ctx.lineTo(cx - r - 6, cy);
-    ctx.moveTo(cx + r, cy);
-    ctx.lineTo(cx + r + 6, cy);
-    ctx.stroke();
-
-    var bodyW = r * 2.2;
-    var bodyH = r * 1.4;
-    var grad = ctx.createLinearGradient(cx - bodyW / 2, cy - bodyH / 2, cx + bodyW / 2, cy + bodyH / 2);
-    grad.addColorStop(0, '#fff0c4');
-    grad.addColorStop(0.35, '#ffcf7a');
-    grad.addColorStop(0.75, '#e69b36');
-    grad.addColorStop(1, '#a36a1f');
-    ctx.fillStyle = grad;
-    roundedRect(cx - bodyW / 2, cy - bodyH / 2, bodyW, bodyH, 6);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    ctx.fillStyle = 'rgba(255,255,255,0.45)';
-    ctx.fillRect(cx - bodyW / 2 + 6, cy - bodyH / 2 + 3, bodyW - 12, 2);
-
-    ctx.fillStyle = 'rgba(120,200,255,0.9)';
-    ctx.beginPath();
-    ctx.arc(cx - 8, cy, 3, 0, Math.PI * 2);
-    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
-    ctx.arc(cx + 8, cy, 3, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#fff3d6';
-    ctx.beginPath();
-    ctx.arc(cx + bodyW / 2 + 5, cy, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#a36a1f';
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-
-    ctx.fillStyle = '#d89a3f';
-    ctx.beginPath();
-    ctx.arc(cx, cy - bodyH / 2 - 6, 6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-    ctx.stroke();
-
-    ctx.strokeStyle = '#9aa7b8';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy - bodyH / 2 - 12);
-    ctx.lineTo(cx, cy - bodyH / 2 - 22);
-    ctx.stroke();
-    ctx.fillStyle = '#c9d4e2';
-    ctx.beginPath();
-    ctx.ellipse(cx, cy - bodyH / 2 - 24, 7, 4, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = 'rgba(255,184,77,0.95)';
-    ctx.font = '11px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('СТАНЦИЯ', cx, cy + bodyH / 2 + 24);
-  }
-
-  function drawSolarPanel(x, y, w, h) {
-    var g = ctx.createLinearGradient(x, y, x, y + h);
-    g.addColorStop(0, '#2b4d78');
-    g.addColorStop(0.5, '#3d6ea8');
-    g.addColorStop(1, '#1c3455');
-    ctx.fillStyle = g;
-    roundedRect(x, y, w, h, 3);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(160,210,255,0.7)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    ctx.strokeStyle = 'rgba(160,210,255,0.35)';
-    for (var i = 1; i < 5; i++) {
-      var gx = x + i * (w / 5);
-      ctx.beginPath();
-      ctx.moveTo(gx, y);
-      ctx.lineTo(gx, y + h);
-      ctx.stroke();
-    }
-    ctx.beginPath();
-    ctx.moveTo(x, y + h / 2);
-    ctx.lineTo(x + w, y + h / 2);
-    ctx.stroke();
-  }
-
-  function drawShip(px, py, burning) {
-    var angle = 0;
-    if (state.ship.vx !== 0 || state.ship.vy !== 0) {
-      angle = Math.atan2(-state.ship.vy, state.ship.vx);
-    }
-
-    var glow = ctx.createRadialGradient(px, py, 2, px, py, 18);
-    glow.addColorStop(0, 'rgba(77,166,255,0.45)');
-    glow.addColorStop(1, 'rgba(77,166,255,0)');
-    ctx.beginPath();
-    ctx.arc(px, py, 18, 0, Math.PI * 2);
-    ctx.fillStyle = glow;
-    ctx.fill();
-
-    ctx.save();
-    ctx.translate(px, py);
-    ctx.rotate(angle);
-
-    if (burning) {
-      var flameLen = 16 + Math.random() * 8;
-      var fg = ctx.createLinearGradient(-10, 0, -10 - flameLen, 0);
-      fg.addColorStop(0, 'rgba(255,255,200,0.95)');
-      fg.addColorStop(0.4, 'rgba(255,180,60,0.7)');
-      fg.addColorStop(1, 'rgba(255,80,20,0)');
-      ctx.fillStyle = fg;
-      ctx.beginPath();
-      ctx.moveTo(-10, -5);
-      ctx.lineTo(-10 - flameLen, 0);
-      ctx.lineTo(-10, 5);
-      ctx.closePath();
-      ctx.fill();
-    }
-
-    ctx.fillStyle = '#4a5a72';
-    ctx.beginPath();
-    ctx.moveTo(-8, -5);
-    ctx.lineTo(-12, -6);
-    ctx.lineTo(-12, 6);
-    ctx.lineTo(-8, 5);
-    ctx.closePath();
-    ctx.fill();
-
-    var g = ctx.createLinearGradient(0, -8, 0, 8);
-    g.addColorStop(0, '#cfe6ff');
-    g.addColorStop(0.5, '#5fb0ff');
-    g.addColorStop(1, '#1f5c9c');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.moveTo(16, 0);
-    ctx.lineTo(6, -8);
-    ctx.lineTo(-8, -7);
-    ctx.lineTo(-8, 7);
-    ctx.lineTo(6, 8);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    var cg = ctx.createRadialGradient(6, -2, 1, 6, -2, 5);
-    cg.addColorStop(0, 'rgba(220,245,255,1)');
-    cg.addColorStop(1, 'rgba(90,170,220,0.8)');
-    ctx.fillStyle = cg;
-    ctx.beginPath();
-    ctx.arc(6, -2, 3.2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-    ctx.lineWidth = 0.8;
-    ctx.stroke();
-
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-    ctx.beginPath();
-    ctx.moveTo(-8, 0);
-    ctx.lineTo(14, 0);
-    ctx.stroke();
-
-    ctx.restore();
-  }
-
-  function roundedRect(x, y, w, h, r) {
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-    ctx.closePath();
-  }
-
-  // Стрелка-указатель на станцию, если она ушла за край
-  function drawStationPointer() {
-    var w = canvas.clientWidth;
-    var h = canvas.clientHeight;
-    var st = toScreen(0, 0);
-    var margin = 24;
-
-    var visible = st.x > margin && st.x < w - margin && st.y > margin && st.y < h - margin;
-    if (visible) return;
-
-    var cx = w / 2;
-    var cy = h / 2;
-    var dx = st.x - cx;
-    var dy = st.y - cy;
-    var ang = Math.atan2(dy, dx);
-
-    // Точка на границе с отступом
-    var rx = w / 2 - margin;
-    var ry = h / 2 - margin;
-    var t = Math.min(Math.abs(rx / (Math.cos(ang) || 0.001)),
-                     Math.abs(ry / (Math.sin(ang) || 0.001)));
-    var px = cx + Math.cos(ang) * t;
-    var py = cy + Math.sin(ang) * t;
-
-    ctx.save();
-    ctx.translate(px, py);
-    ctx.rotate(ang);
-
-    ctx.fillStyle = 'rgba(255,184,77,0.9)';
-    ctx.beginPath();
-    ctx.moveTo(10, 0);
-    ctx.lineTo(-6, -6);
-    ctx.lineTo(-6, 6);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.restore();
-
-    ctx.fillStyle = 'rgba(255,184,77,0.9)';
-    ctx.font = '10px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('СТАНЦИЯ', px, py + 18);
-  }
-
-  function draw() {
-    var w = canvas.clientWidth;
-    var h = canvas.clientHeight;
-    ctx.clearRect(0, 0, w, h);
-
-    drawStars(w, h);
-    drawGrid();
-
-    var st = toScreen(0, 0);
-
-    var dist = Math.sqrt(state.ship.x * state.ship.x + state.ship.y * state.ship.y);
-    var speed = Math.sqrt(state.ship.vx * state.ship.vx + state.ship.vy * state.ship.vy);
-    var inDock = dist <= DOCK_R;
-    var okSpeed = speed <= MAX_DOCK_SPEED;
-
-    // Коридор — расширенная зона сближения (вокруг станции)
-    ctx.save();
-    ctx.translate(st.x, st.y);
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.arc(0, 0, 320 * SCALE * 0.4, Math.PI * 0.7, Math.PI * 1.3);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(76, 217, 100, 0.05)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(76, 217, 100, 0.20)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.restore();
-
-    // Радиус стыковки
-    var dockStroke = 'rgba(76, 217, 100, 0.5)';
-    var dockFill = null;
-    if (inDock && okSpeed) {
-      dockStroke = 'rgba(76, 217, 100, 0.95)';
-      dockFill = 'rgba(76, 217, 100, 0.15)';
-    } else if (inDock && !okSpeed) {
-      dockStroke = 'rgba(255, 77, 77, 0.9)';
-      dockFill = 'rgba(255, 77, 77, 0.12)';
-    }
-    if (dockFill) {
-      ctx.beginPath();
-      ctx.arc(st.x, st.y, DOCK_R * SCALE, 0, Math.PI * 2);
-      ctx.fillStyle = dockFill;
-      ctx.fill();
-    }
-    ctx.beginPath();
-    ctx.arc(st.x, st.y, DOCK_R * SCALE, 0, Math.PI * 2);
-    ctx.strokeStyle = dockStroke;
-    ctx.setLineDash([5, 5]);
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // След
-    if (state.trail.length > 1) {
-      ctx.beginPath();
-      for (var k = 0; k < state.trail.length; k++) {
-        var p = toScreen(state.trail[k].x, state.trail[k].y);
-        if (k === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
-      }
-      ctx.strokeStyle = 'rgba(77, 166, 255, 0.5)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-
-    drawStation(st.x, st.y);
-
-    var sp = toScreen(state.ship.x, state.ship.y);
-    drawShip(sp.x, sp.y, state.burnTimer > 0);
-
-    if (speed > 0.5) {
-      var kk = 0.6;
-      ctx.beginPath();
-      ctx.moveTo(sp.x, sp.y);
-      ctx.lineTo(sp.x + state.ship.vx * kk, sp.y - state.ship.vy * kk);
-      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    }
-
-    drawStationPointer();
-  }
-
-  function loop() {
-    if (!state.running) return;
-    for (var i = 0; i < 2; i++) {
-      if (state.running) stepPhysics();
-    }
-    updateHud();
-    draw();
-    if (state.running) requestAnimationFrame(loop);
-  }
-
-  // ---------- Корректировка ----------
-  function nudge(dvDelta, angDelta) {
-    var dv = parseFloat(sDv.value) + dvDelta;
-    dv = Math.min(30, Math.max(0, dv));
-    sDv.value = dv;
-
-    var ang = parseFloat(sAng.value) + angDelta;
-    while (ang > 180) ang -= 360;
-    while (ang < -180) ang += 360;
-    sAng.value = ang;
-
-    syncOutputs();
-  }
-
-  function holdButton(id, fn) {
-    var el = document.getElementById(id);
-    var timer = null;
-    function start(e) {
-      e.preventDefault();
-      fn();
-      timer = setInterval(fn, 80);
-    }
-    function stop() {
-      if (timer) { clearInterval(timer); timer = null; }
-    }
-    el.addEventListener('mousedown', start);
-    el.addEventListener('touchstart', start, { passive: false });
-    el.addEventListener('mouseup', stop);
-    el.addEventListener('mouseleave', stop);
-    el.addEventListener('touchend', stop);
-    el.addEventListener('touchcancel', stop);
-  }
-
-  sSpeed.addEventListener('input', function () { syncOutputs(); if (!state.running) resetRound(false); });
-  sDir.addEventListener('input', function () { syncOutputs(); if (!state.running) resetRound(false); });
-  sDv.addEventListener('input', function () { syncOutputs(); });
-  sAng.addEventListener('input', function () { syncOutputs(); });
-
-  btnStart.addEventListener('click', startSim);
-  btnBurn.addEventListener('click', burnNow);
-  btnReset.addEventListener('click', function () {
+function checkWin() {
+  const p = state.level.stars.precision || 3;
+  if (state.dist < p && Math.abs(state.speed) < 0.5) {
     state.running = false;
-    resetRound(true);
+    evaluateStars();
+  }
+}
+
+function evaluateStars() {
+  const lv = state.level;
+  if (!lv.stars.time) {
+    state.message = 'Стыковка выполнена!';
+    return;
+  }
+
+  state.stars[0] = state.time <= lv.stars.time;
+  state.stars[1] = (state.fuelMax - state.fuel) <= lv.stars.fuel;
+  state.stars[2] = state.dist < lv.stars.precision;
+
+  updateStars();
+  const total = state.stars.filter(Boolean).length;
+  state.message = 'Стыковка! Звёзд: ' + total + '/3';
+}
+
+// ============================================================
+// Отрисовка
+// ============================================================
+
+const bgStars = [];
+for (let i = 0; i < 120; i++) {
+  bgStars.push({ x: Math.random(), y: Math.random(), r: Math.random() * 1.2 });
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  const cx = W / 2;
+  const cy = H / 2;
+  const scale = Math.min(W, H) / 500;
+
+  // Фон
+  ctx.fillStyle = 'rgba(200, 220, 255, 0.6)';
+  bgStars.forEach(s => {
+    ctx.beginPath();
+    ctx.arc(s.x * W, s.y * H, s.r, 0, Math.PI * 2);
+    ctx.fill();
   });
 
-  holdButton('btn-left', function () { nudge(0, -2); });
-  holdButton('btn-right', function () { nudge(0, 2); });
-  holdButton('btn-up', function () { nudge(1, 0); });
-  holdButton('btn-down', function () { nudge(-1, 0); });
+  // Орбита
+  ctx.strokeStyle = 'rgba(80, 140, 220, 0.3)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, 180 * scale, 100 * scale, 0, 0, Math.PI * 2);
+  ctx.stroke();
 
-  window.addEventListener('keydown', function (e) {
-    switch (e.key) {
-      case 'ArrowLeft': nudge(0, -2); e.preventDefault(); break;
-      case 'ArrowRight': nudge(0, 2); e.preventDefault(); break;
-      case 'ArrowUp': nudge(1, 0); e.preventDefault(); break;
-      case 'ArrowDown': nudge(-1, 0); e.preventDefault(); break;
-      case ' ': startSim(); e.preventDefault(); break;
-      case 'b': case 'B': case 'и': case 'И':
-        burnNow(); e.preventDefault(); break;
-      case 'r': case 'R': case 'к': case 'К':
-        state.running = false; resetRound(true); break;
-    }
+  // Оси V-bar / R-bar
+  ctx.strokeStyle = 'rgba(100, 160, 240, 0.15)';
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath();
+  ctx.moveTo(cx - 200 * scale, cy); ctx.lineTo(cx + 200 * scale, cy);
+  ctx.moveTo(cx, cy - 150 * scale); ctx.lineTo(cx, cy + 150 * scale);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Траектория
+  if (state.history.length > 1) {
+    ctx.strokeStyle = 'rgba(126, 200, 255, 0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    state.history.forEach((pt, i) => {
+      const x = cx + (pt.d / 220) * 180 * scale;
+      const y = cy + (pt.s / 40) * 80 * scale;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+
+  // Станция
+  const rot = state.level.rotating ? state.rotationPhase : 0;
+  drawStation(cx, cy, 22 * scale, rot);
+
+  // Корабль
+  const shipX = cx + (state.dist / 220) * 180 * scale;
+  const shipY = cy + (state.speed / 40) * 80 * scale;
+  drawShip(shipX, shipY, 12 * scale, state.satellite.color);
+
+  // Вектор скорости
+  ctx.strokeStyle = '#7ec8ff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(shipX, shipY);
+  ctx.lineTo(shipX + 30 * scale, shipY - 10 * scale);
+  ctx.stroke();
+
+  // Коридор стыковки
+  ctx.strokeStyle = 'rgba(255, 215, 94, 0.4)';
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.arc(cx, cy, (state.level.stars.precision || 5) * scale * 4, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Сообщение
+  if (state.message) {
+    ctx.fillStyle = '#ffd75e';
+    ctx.font = 'bold 18px Segoe UI, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(state.message, cx, 40);
+  }
+}
+
+function drawStation(x, y, r, rot) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+  ctx.fillStyle = '#3a6ea5';
+  ctx.strokeStyle = '#7ec8ff';
+  ctx.lineWidth = 2;
+  ctx.fillRect(-r * 2, -r * 0.3, r * 1.5, r * 0.6);
+  ctx.fillRect(r * 0.5, -r * 0.3, r * 1.5, r * 0.6);
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#ffd75e';
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.25, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawShip(x, y, r, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#e8f3ff';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(r, 0);
+  ctx.lineTo(-r * 0.7, -r * 0.6);
+  ctx.lineTo(-r * 0.7, r * 0.6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ============================================================
+// Игровой цикл
+// ============================================================
+
+let acc = 0;
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min((now - last) / 1000, 0.1);
+  last = now;
+  acc += dt;
+  while (acc >= DT) {
+    physicsStep();
+    acc -= DT;
+  }
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// ============================================================
+// Управление
+// ============================================================
+
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'ArrowLeft')  state.angle = (state.angle - 5 + 360) % 360;
+  if (e.code === 'ArrowRight') state.angle = (state.angle + 5) % 360;
+  if (e.code === 'ArrowUp')    state.dv = Math.min(state.dv + 1, 20);
+  if (e.code === 'ArrowDown')  state.dv = Math.max(state.dv - 1, 0);
+  if (e.code === 'Space') { state.running = true; state.impulseQueued = true; }
+  if (e.code === 'KeyB')  state.impulseQueued = true;
+  if (e.code === 'KeyR')  startLevel(state.level, state.satellite);
+});
+
+document.querySelectorAll('[data-dir]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const d = btn.dataset.dir;
+    const step = state.satellite.agility * 10;
+    if (d === 'left')  state.angle = (state.angle - step + 360) % 360;
+    if (d === 'right') state.angle = (state.angle + step) % 360;
+    if (d === 'up')    state.dv = Math.min(state.dv + 1, 20);
+    if (d === 'down')  state.dv = Math.max(state.dv - 1, 0);
   });
+});
 
-  window.addEventListener('resize', resize);
+document.getElementById('btn-impulse').addEventListener('click', () => {
+  state.running = true;
+  state.impulseQueued = true;
+});
+document.getElementById('btn-restart').addEventListener('click', () => {
+  startLevel(state.level, state.satellite);
+});
 
-  syncOutputs();
-  resetRound(true);
-  resize();
-})();
+// ============================================================
+// Модалка: миссии и спутники
+// ============================================================
+
+const modal = document.getElementById('modal');
+const modalTitle = document.getElementById('modal-title');
+const modalBody = document.getElementById('modal-body');
+
+function openModal(title, items, onSelect, activeId) {
+  modalTitle.textContent = title;
+  modalBody.innerHTML = '';
+  items.forEach(item => {
+    const card = document.createElement('div');
+    card.className = 'card' + (item.id === activeId ? ' active' : '');
+    card.innerHTML = '<h3>' + item.name + '</h3><p>' + (item.description || '') + '</p>';
+    card.addEventListener('click', () => {
+      onSelect(item);
+      modal.classList.add('hidden');
+    });
+    modalBody.appendChild(card);
+  });
+  modal.classList.remove('hidden');
+}
+
+document.getElementById('open-missions').addEventListener('click', () => {
+  openModal('Выбор миссии', LEVELS, (lv) => {
+    startLevel(lv, state.satellite);
+  }, state.level.id);
+});
+
+document.getElementById('open-satellites').addEventListener('click', () => {
+  openModal('Выбор спутника', SATELLITES, (sat) => {
+    state.satellite = sat;
+    startLevel(state.level, sat);
+  }, state.satellite.id);
+});
+
+document.getElementById('modal-close').addEventListener('click', () => {
+  modal.classList.add('hidden');
+});
+
+// ============================================================
+// Инициализация
+// ============================================================
+
+resize();
+startLevel(LEVELS[0], SATELLITES[0]);
+requestAnimationFrame(loop);
