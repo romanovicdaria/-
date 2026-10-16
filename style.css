@@ -2,6 +2,7 @@
 
 html, body {
   height: 100%;
+  width: 100%;
   background: #05070d;
   color: #cfe3ff;
   font-family: 'Segoe UI', system-ui, sans-serif;
@@ -18,7 +19,6 @@ html, body {
   flex-direction: column;
 }
 
-/* HUD */
 #hud {
   display: flex;
   flex-wrap: wrap;
@@ -27,21 +27,35 @@ html, body {
   background: rgba(10, 20, 40, 0.85);
   border-bottom: 1px solid #1e3a5f;
   font-size: 12px;
+  z-index: 10;
 }
-.hud-item { display: flex; flex-direction: column; min-width: 70px; }
-.hud-item span { color: #6f9bd1; font-size: 10px; text-transform: uppercase; }
-.hud-item b { color: #e8f3ff; font-size: 14px; }
 
-/* Canvas */
+.hud-item {
+  display: flex;
+  flex-direction: column;
+  min-width: 70px;
+}
+
+.hud-item span {
+  color: #6f9bd1;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.hud-item b {
+  color: #e8f3ff;
+  font-size: 14px;
+}
+
 #canvas {
   flex: 1;
   display: block;
   width: 100%;
+  height: 100%;
   background: radial-gradient(circle at 50% 50%, #0a1428 0%, #03060c 100%);
   touch-action: none;
 }
 
-/* Панель миссии */
 #mission-panel {
   position: absolute;
   top: 70px;
@@ -53,15 +67,38 @@ html, body {
   font-size: 12px;
   max-width: 240px;
   backdrop-filter: blur(6px);
+  z-index: 5;
 }
-#mission-name { font-weight: bold; color: #7ec8ff; margin-bottom: 6px; }
-#objective { color: #9db8d6; margin-top: 6px; font-size: 11px; }
 
-#stars { display: flex; gap: 4px; font-size: 22px; }
-.star { color: #2a3f5c; transition: color .3s, transform .3s; }
-.star.filled { color: #ffd75e; text-shadow: 0 0 8px #ffb400; transform: scale(1.1); }
+#mission-name {
+  font-weight: bold;
+  color: #7ec8ff;
+  margin-bottom: 6px;
+}
 
-/* Меню */
+#objective {
+  color: #9db8d6;
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+#stars {
+  display: flex;
+  gap: 4px;
+  font-size: 22px;
+}
+
+.star {
+  color: #2a3f5c;
+  transition: color .3s, transform .3s;
+}
+
+.star.filled {
+  color: #ffd75e;
+  text-shadow: 0 0 8px #ffb400;
+  transform: scale(1.1);
+}
+
 #menu-buttons {
   position: absolute;
   top: 70px;
@@ -69,7 +106,9 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  z-index: 5;
 }
+
 #menu-buttons button {
   background: rgba(20, 40, 70, 0.85);
   border: 1px solid #2c5588;
@@ -80,7 +119,6 @@ html, body {
   cursor: pointer;
 }
 
-/* Мобильное управление */
 #touch-controls {
   position: absolute;
   bottom: 12px;
@@ -90,7 +128,9 @@ html, body {
   justify-content: space-between;
   padding: 0 16px;
   pointer-events: none;
+  z-index: 5;
 }
+
 #touch-controls > * { pointer-events: auto; }
 
 .pad button, .actions button {
@@ -105,23 +145,50 @@ html, body {
   touch-action: manipulation;
   cursor: pointer;
 }
-.pad { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+
+.pad {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+
 .pad .row { display: flex; gap: 6px; }
 
-.actions { display: flex; flex-direction: column; gap: 8px; }
-.actions button { font-size: 14px; padding: 14px 18px; }
-#btn-impulse { background: rgba(180, 90, 20, 0.85); border-color: #d97a2a; }
-#btn-restart { background: rgba(60, 30, 30, 0.85); border-color: #8a3a3a; }
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 
-/* Модалка */
+.actions button {
+  font-size: 14px;
+  padding: 14px 18px;
+}
+
+#btn-impulse {
+  background: rgba(180, 90, 20, 0.85);
+  border-color: #d97a2a;
+}
+
+#btn-restart {
+  background: rgba(60, 30, 30, 0.85);
+  border-color: #8a3a3a;
+}
+
 .modal {
-  position: fixed; inset: 0;
+  position: fixed;
+  inset: 0;
   background: rgba(0,0,0,0.7);
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   z-index: 100;
   padding: 16px;
 }
+
 .modal.hidden { display: none; }
+
 .modal-content {
   background: #0b1524;
   border: 1px solid #1e3a5f;
@@ -132,8 +199,19 @@ html, body {
   max-height: 80vh;
   overflow-y: auto;
 }
-.modal-content h2 { margin-bottom: 14px; color: #7ec8ff; font-size: 18px; }
-#modal-body { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+
+.modal-content h2 {
+  margin-bottom: 14px;
+  color: #7ec8ff;
+  font-size: 18px;
+}
+
+#modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
 
 .card {
   background: #10203a;
@@ -141,8 +219,9 @@ html, body {
   border-radius: 10px;
   padding: 10px 12px;
   cursor: pointer;
-  transition: border-color .2s, transform .1s;
+  transition: border-color .2s;
 }
+
 .card:hover { border-color: #7ec8ff; }
 .card.active { border-color: #ffd75e; box-shadow: 0 0 10px rgba(255,215,94,.3); }
 .card h3 { font-size: 14px; color: #cfe3ff; margin-bottom: 4px; }
@@ -159,7 +238,6 @@ html, body {
   cursor: pointer;
 }
 
-/* Адаптив */
 @media (max-width: 500px) {
   #hud { font-size: 11px; gap: 6px; padding: 6px 8px; }
   .hud-item { min-width: 55px; }
