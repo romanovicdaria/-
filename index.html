@@ -1,91 +1,72 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Стыковка с орбитальной станцией</title>
-  <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Стыковка с орбитальной станцией</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="app">
-    <h1>Стыковка с орбитальной станцией</h1>
-    <p class="disclaimer">
-      Учебная модель относительного движения по орбите (HCW). Траектория упрощена.
-    </p>
 
-    <div class="canvas-wrap">
-      <canvas id="scene"></canvas>
+<div id="game">
+
+  <!-- HUD -->
+  <header id="hud">
+    <div class="hud-item"><span>Расстояние</span><b id="hud-dist">220.0</b></div>
+    <div class="hud-item"><span>Скорость</span><b id="hud-speed">30.0</b></div>
+    <div class="hud-item"><span>Сближение</span><b id="hud-closing">-30.0</b></div>
+    <div class="hud-item"><span>Время</span><b id="hud-time">0.0</b></div>
+    <div class="hud-item"><span>ΔV</span><b id="hud-dv">0.0</b></div>
+    <div class="hud-item"><span>Топливо</span><b id="hud-fuel">30.0 / 30</b></div>
+  </header>
+
+  <!-- Игровое поле -->
+  <canvas id="canvas"></canvas>
+
+  <!-- Панель миссии и звёзд -->
+  <div id="mission-panel">
+    <div id="mission-name">Миссия: Свободный полёт</div>
+    <div id="stars">
+      <span class="star" data-i="0">★</span>
+      <span class="star" data-i="1">★</span>
+      <span class="star" data-i="2">★</span>
     </div>
+    <div id="objective">Цель: состыковаться с целью</div>
+  </div>
 
-    <div class="hud">
-      <div>Расстояние: <b id="hud-dist">0.0</b></div>
-      <div>Скорость: <b id="hud-speed">0.0</b></div>
-      <div>Сближение: <b id="hud-range">0.0</b></div>
-      <div>Время: <b id="hud-time">0.0</b></div>
-      <div>ΔV: <b id="hud-dv">0.0</b></div>
-      <div>Статус: <b id="hud-status">ожидание</b></div>
-    </div>
+  <!-- Кнопки меню -->
+  <div id="menu-buttons">
+    <button id="open-missions">Миссии</button>
+    <button id="open-satellites">Спутник</button>
+  </div>
 
-    <div class="fuel">
-      <div class="fuel-label">Топливо: <b id="fuel-num">30.0 / 30</b></div>
-      <div class="fuel-bar"><div class="fuel-fill" id="fuel-fill"></div></div>
-    </div>
-
-    <div class="panel">
-      <h2>Начальные условия</h2>
-      <div class="slider-row">
-        <label for="s-speed">Скорость</label>
-        <input type="range" id="s-speed" min="0" max="80" step="1" value="30">
-        <span class="val" id="v-speed">30</span>
+  <!-- Мобильное управление -->
+  <div id="touch-controls">
+    <div class="pad">
+      <button data-dir="up">▲</button>
+      <div class="row">
+        <button data-dir="left">◀</button>
+        <button data-dir="down">▼</button>
+        <button data-dir="right">▶</button>
       </div>
-      <div class="slider-row">
-        <label for="s-dir">Направление</label>
-        <input type="range" id="s-dir" min="-90" max="90" step="1" value="0">
-        <span class="val" id="v-dir">0°</span>
-      </div>
     </div>
-
-    <div class="panel">
-      <h2>Импульс (ΔV)</h2>
-      <div class="slider-row">
-        <label for="s-dv">ΔV</label>
-        <input type="range" id="s-dv" min="0" max="30" step="0.5" value="0">
-        <span class="val" id="v-dv">0.0</span>
-      </div>
-      <div class="slider-row">
-        <label for="s-ang">Угол имп.</label>
-        <input type="range" id="s-ang" min="-180" max="180" step="1" value="0">
-        <span class="val" id="v-ang">0°</span>
-      </div>
-      <p class="hint-small">
-        Угол 0° — ускорение «вперёд по движению», 180° — торможение.
-        Пока не запущено, ΔV сработает на старте. Во время полёта жми кнопку «Импульс».
-      </p>
-    </div>
-
-    <div class="buttons">
-      <button id="btn-start" class="primary">▶ Запуск</button>
-      <button id="btn-burn" disabled>💥 Импульс</button>
-      <button id="btn-reset">⟲ Заново</button>
-    </div>
-
-    <div id="msg" class="msg"></div>
-
-    <p class="hint">
-      Компьютер: стрелки ← → меняют угол импульса, ↑ ↓ меняют ΔV, пробел — запуск,
-      B — импульс в полёте, R — заново.
-    </p>
-
-    <div class="buttons mobile-nudge">
-      <button id="btn-left">← Угол</button>
-      <button id="btn-right">Угол →</button>
-    </div>
-    <div class="buttons mobile-nudge">
-      <button id="btn-down">ΔV −</button>
-      <button id="btn-up">ΔV +</button>
+    <div class="actions">
+      <button id="btn-impulse">Импульс</button>
+      <button id="btn-restart">Заново</button>
     </div>
   </div>
 
-  <script src="script.js"></script>
+  <!-- Модалка -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-content">
+      <h2 id="modal-title">Выбор миссии</h2>
+      <div id="modal-body"></div>
+      <button id="modal-close">Закрыть</button>
+    </div>
+  </div>
+
+</div>
+
+<script src="script.js"></script>
 </body>
 </html>
