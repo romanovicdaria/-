@@ -1,71 +1,47 @@
-// ============================================================
-// Данные: уровни и спутники
-// ============================================================
-
+// ===== Данные: уровни и спутники =====
 const LEVELS = [
-  {
-    id: 'free', name: 'Свободный полёт',
-    description: 'Тренировка без цели',
+  { id: 'free', name: 'Свободный полёт', description: 'Тренировка без цели',
     distance: 220, speed: 30, fuel: 30, timeLimit: 0,
     stars: { time: 0, fuel: 0, precision: 0 },
-    objective: 'Свободная тренировка'
-  },
-  {
-    id: 'easy', name: 'Миссия 1: Первое сближение',
-    description: 'Много топлива, медленный дрейф',
+    objective: 'Свободная тренировка' },
+  { id: 'easy', name: 'Миссия 1: Первое сближение', description: 'Много топлива, медленный дрейф',
     distance: 200, speed: 20, fuel: 40, timeLimit: 0,
     stars: { time: 120, fuel: 10, precision: 5 },
-    objective: 'Стыковка: дистанция < 5 м, скорость < 0.5 м/с'
-  },
-  {
-    id: 'normal', name: 'Миссия 2: V-bar подход',
-    description: 'Стандартная стыковка по оси V',
+    objective: 'Дистанция < 5 м, скорость < 0.5 м/с' },
+  { id: 'normal', name: 'Миссия 2: V-bar подход', description: 'Стандартная стыковка по оси V',
     distance: 180, speed: 25, fuel: 30, timeLimit: 180,
     stars: { time: 150, fuel: 8, precision: 3 },
-    objective: 'Подойти по V-bar, мягкий контакт'
-  },
-  {
-    id: 'hard', name: 'Миссия 3: R-bar подход',
-    description: 'Подход снизу, меньше топлива',
+    objective: 'Подойти по V-bar, мягкий контакт' },
+  { id: 'hard', name: 'Миссия 3: R-bar подход', description: 'Подход снизу, меньше топлива',
     distance: 160, speed: 28, fuel: 22, timeLimit: 150,
     stars: { time: 120, fuel: 5, precision: 2 },
-    objective: 'Подойти по R-bar, удержать позицию'
-  },
-  {
-    id: 'expert', name: 'Миссия 4: Вращающаяся станция',
-    description: 'Станция дрейфует и вращается',
+    objective: 'Подойти по R-bar, удержать позицию' },
+  { id: 'expert', name: 'Миссия 4: Вращающаяся станция', description: 'Станция дрейфует и вращается',
     distance: 150, speed: 30, fuel: 18, timeLimit: 120,
     stars: { time: 90, fuel: 4, precision: 1.5 },
     objective: 'Стыковка с вращающейся станцией',
-    rotating: true, drift: 0.05
-  },
-  {
-    id: 'emergency', name: 'Миссия 5: Аварийная стыковка',
-    description: 'Мало топлива, мало времени',
+    rotating: true, drift: 0.05 },
+  { id: 'emergency', name: 'Миссия 5: Аварийная стыковка', description: 'Мало топлива, мало времени',
     distance: 140, speed: 35, fuel: 12, timeLimit: 90,
     stars: { time: 70, fuel: 3, precision: 1 },
     objective: 'Успеть до закрытия окна',
-    rotating: true, drift: 0.08
-  }
+    rotating: true, drift: 0.08 }
 ];
 
 const SATELLITES = [
-  { id: 'soyuz', name: 'Союз МС', description: 'Классический корабль, сбалансирован',
+  { id: 'soyuz', name: 'Союз МС', description: 'Сбалансированный корабль',
     thrust: 1.0, fuel: 1.0, agility: 1.0, color: '#7ec8ff' },
   { id: 'progress', name: 'Прогресс МС', description: 'Грузовик: много топлива, медленный',
     thrust: 0.8, fuel: 1.5, agility: 0.7, color: '#9dd68a' },
-  { id: 'dragon', name: 'Crew Dragon', description: 'Современный: быстрый, но прожорливый',
+  { id: 'dragon', name: 'Crew Dragon', description: 'Быстрый, но прожорливый',
     thrust: 1.3, fuel: 0.8, agility: 1.4, color: '#ffd75e' },
-  { id: 'tianzhou', name: 'Тяньчжоу', description: 'Тяжёлый грузовик, очень экономичный',
+  { id: 'tianzhou', name: 'Тяньчжоу', description: 'Тяжёлый, очень экономичный',
     thrust: 0.7, fuel: 1.8, agility: 0.6, color: '#ff8fa3' },
-  { id: 'cygnus', name: 'Cygnus', description: 'Баланс между грузом и манёвром',
+  { id: 'cygnus', name: 'Cygnus', description: 'Баланс груза и манёвра',
     thrust: 1.0, fuel: 1.2, agility: 1.0, color: '#b48aff' }
 ];
 
-// ============================================================
-// Состояние игры
-// ============================================================
-
+// ===== Состояние =====
 const state = {
   level: LEVELS[0],
   satellite: SATELLITES[0],
@@ -79,13 +55,11 @@ const state = {
   message: ''
 };
 
-// ============================================================
-// Canvas
-// ============================================================
-
+// ===== Canvas =====
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-let W = 0, H = 0, DPR = Math.min(window.devicePixelRatio || 1, 2);
+let W = 0, H = 0;
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
 
 function resize() {
   W = canvas.clientWidth;
@@ -96,10 +70,7 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 
-// ============================================================
-// HUD / панели
-// ============================================================
-
+// ===== HUD =====
 const hud = {
   dist: document.getElementById('hud-dist'),
   speed: document.getElementById('hud-speed'),
@@ -129,10 +100,7 @@ function updateMissionPanel() {
   document.getElementById('objective').textContent = state.level.objective;
 }
 
-// ============================================================
-// Запуск уровня
-// ============================================================
-
+// ===== Запуск =====
 function startLevel(level, satellite) {
   state.level = level;
   state.satellite = satellite;
@@ -155,38 +123,30 @@ function startLevel(level, satellite) {
   updateHUD();
   updateStars();
   updateMissionPanel();
-  draw();
 }
 
-// ============================================================
-// Физика
-// ============================================================
-
+// ===== Физика =====
 const DT = 0.1;
 
 function physicsStep() {
   if (!state.running) return;
 
-  // Дрейф / вращение
   if (state.level.drift) {
     state.drift += state.level.drift * DT * 0.1;
     state.dist += Math.sin(state.drift) * 0.3;
   }
   if (state.level.rotating) state.rotationPhase += 0.02;
 
-  // Импульс
   if (state.impulseQueued) {
     applyImpulse();
     state.impulseQueued = false;
   }
 
-  // Упрощённая модель HCW
   state.dist -= state.speed * DT * 0.5;
   state.closing = -state.speed;
   state.speed *= 0.999;
   state.time += DT;
 
-  // Запись траектории
   state.history.push({ d: state.dist, s: state.speed, t: state.time });
   if (state.history.length > 400) state.history.shift();
 
@@ -232,20 +192,15 @@ function evaluateStars() {
     state.message = 'Стыковка выполнена!';
     return;
   }
-
   state.stars[0] = state.time <= lv.stars.time;
   state.stars[1] = (state.fuelMax - state.fuel) <= lv.stars.fuel;
   state.stars[2] = state.dist < lv.stars.precision;
-
   updateStars();
   const total = state.stars.filter(Boolean).length;
   state.message = 'Стыковка! Звёзд: ' + total + '/3';
 }
 
-// ============================================================
-// Отрисовка
-// ============================================================
-
+// ===== Отрисовка =====
 const bgStars = [];
 for (let i = 0; i < 120; i++) {
   bgStars.push({ x: Math.random(), y: Math.random(), r: Math.random() * 1.2 });
@@ -258,7 +213,7 @@ function draw() {
   const cy = H / 2;
   const scale = Math.min(W, H) / 500;
 
-  // Фон
+  // Фон — звёзды
   ctx.fillStyle = 'rgba(200, 220, 255, 0.6)';
   bgStars.forEach(s => {
     ctx.beginPath();
@@ -273,7 +228,7 @@ function draw() {
   ctx.ellipse(cx, cy, 180 * scale, 100 * scale, 0, 0, Math.PI * 2);
   ctx.stroke();
 
-  // Оси V-bar / R-bar
+  // Оси
   ctx.strokeStyle = 'rgba(100, 160, 240, 0.15)';
   ctx.setLineDash([5, 5]);
   ctx.beginPath();
@@ -296,6 +251,14 @@ function draw() {
     ctx.stroke();
   }
 
+  // Коридор стыковки
+  ctx.strokeStyle = 'rgba(255, 215, 94, 0.4)';
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.arc(cx, cy, (state.level.stars.precision || 5) * scale * 4, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
   // Станция
   const rot = state.level.rotating ? state.rotationPhase : 0;
   drawStation(cx, cy, 22 * scale, rot);
@@ -312,14 +275,6 @@ function draw() {
   ctx.moveTo(shipX, shipY);
   ctx.lineTo(shipX + 30 * scale, shipY - 10 * scale);
   ctx.stroke();
-
-  // Коридор стыковки
-  ctx.strokeStyle = 'rgba(255, 215, 94, 0.4)';
-  ctx.setLineDash([3, 3]);
-  ctx.beginPath();
-  ctx.arc(cx, cy, (state.level.stars.precision || 5) * scale * 4, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.setLineDash([]);
 
   // Сообщение
   if (state.message) {
@@ -366,10 +321,7 @@ function drawShip(x, y, r, color) {
   ctx.restore();
 }
 
-// ============================================================
-// Игровой цикл
-// ============================================================
-
+// ===== Игровой цикл =====
 let acc = 0;
 let last = performance.now();
 function loop(now) {
@@ -384,10 +336,7 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
-// ============================================================
-// Управление
-// ============================================================
-
+// ===== Управление =====
 document.addEventListener('keydown', (e) => {
   if (e.code === 'ArrowLeft')  state.angle = (state.angle - 5 + 360) % 360;
   if (e.code === 'ArrowRight') state.angle = (state.angle + 5) % 360;
@@ -401,7 +350,7 @@ document.addEventListener('keydown', (e) => {
 document.querySelectorAll('[data-dir]').forEach(btn => {
   btn.addEventListener('click', () => {
     const d = btn.dataset.dir;
-    const step = state.satellite.agility * 10;
+    const step = (state.satellite.agility || 1) * 10;
     if (d === 'left')  state.angle = (state.angle - step + 360) % 360;
     if (d === 'right') state.angle = (state.angle + step) % 360;
     if (d === 'up')    state.dv = Math.min(state.dv + 1, 20);
@@ -417,10 +366,7 @@ document.getElementById('btn-restart').addEventListener('click', () => {
   startLevel(state.level, state.satellite);
 });
 
-// ============================================================
-// Модалка: миссии и спутники
-// ============================================================
-
+// ===== Модалка =====
 const modal = document.getElementById('modal');
 const modalTitle = document.getElementById('modal-title');
 const modalBody = document.getElementById('modal-body');
@@ -442,9 +388,7 @@ function openModal(title, items, onSelect, activeId) {
 }
 
 document.getElementById('open-missions').addEventListener('click', () => {
-  openModal('Выбор миссии', LEVELS, (lv) => {
-    startLevel(lv, state.satellite);
-  }, state.level.id);
+  openModal('Выбор миссии', LEVELS, (lv) => startLevel(lv, state.satellite), state.level.id);
 });
 
 document.getElementById('open-satellites').addEventListener('click', () => {
@@ -458,10 +402,7 @@ document.getElementById('modal-close').addEventListener('click', () => {
   modal.classList.add('hidden');
 });
 
-// ============================================================
-// Инициализация
-// ============================================================
-
+// ===== Инициализация =====
 resize();
 startLevel(LEVELS[0], SATELLITES[0]);
 requestAnimationFrame(loop);
