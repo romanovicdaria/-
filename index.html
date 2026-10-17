@@ -1,66 +1,92 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Стыковка с орбитальной станцией</title>
-<link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Стыковка с орбитальной станцией</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <div id="app">
+    <header>
+      <h1>Стыковка с орбитальной станцией</h1>
+      <p class="disclaimer">Учебная модель (HCW). Траектория упрощена.</p>
+    </header>
 
-<div id="game">
-
-  <header id="hud">
-    <div class="hud-item"><span>Расстояние</span><b id="hud-dist">220.0</b></div>
-    <div class="hud-item"><span>Скорость</span><b id="hud-speed">30.0</b></div>
-    <div class="hud-item"><span>Сближение</span><b id="hud-closing">-30.0</b></div>
-    <div class="hud-item"><span>Время</span><b id="hud-time">0.0</b></div>
-    <div class="hud-item"><span>ΔV</span><b id="hud-dv">0.0</b></div>
-    <div class="hud-item"><span>Топливо</span><b id="hud-fuel">30.0 / 30</b></div>
-  </header>
-
-  <canvas id="canvas"></canvas>
-
-  <div id="mission-panel">
-    <div id="mission-name">Миссия: Свободный полёт</div>
-    <div id="stars">
-      <span class="star" data-i="0">★</span>
-      <span class="star" data-i="1">★</span>
-      <span class="star" data-i="2">★</span>
-    </div>
-    <div id="objective">Цель: состыковаться с целью</div>
-  </div>
-
-  <div id="menu-buttons">
-    <button id="open-missions">Миссии</button>
-    <button id="open-satellites">Спутник</button>
-  </div>
-
-  <div id="touch-controls">
-    <div class="pad">
-      <button data-dir="up">▲</button>
-      <div class="row">
-        <button data-dir="left">◀</button>
-        <button data-dir="down">▼</button>
-        <button data-dir="right">▶</button>
+    <div class="mission-bar">
+      <div class="mission-info">
+        <span class="mission-label">Миссия:</span>
+        <b id="mission-name">Свободный полёт</b>
+      </div>
+      <div class="mission-info">
+        <span class="mission-label">Станция:</span>
+        <b id="station-name">МКС-стиль</b>
       </div>
     </div>
-    <div class="actions">
-      <button id="btn-impulse">Импульс</button>
-      <button id="btn-restart">Заново</button>
+
+    <div class="canvas-wrap">
+      <canvas id="scene"></canvas>
+      <div id="toast" class="toast"></div>
     </div>
+
+    <div class="hud">
+      <div>Расстояние: <b id="hud-dist">0.0</b></div>
+      <div>Скорость: <b id="hud-speed">0.0</b></div>
+      <div>Сближение: <b id="hud-range">0.0</b></div>
+      <div>Время: <b id="hud-time">0.0</b></div>
+      <div>ΔV: <b id="hud-dv">0.0</b></div>
+      <div>Цель: <b id="hud-goal">—</b></div>
+    </div>
+
+    <div class="fuel">
+      <div class="fuel-label">Топливо: <b id="fuel-num">30.0 / 30</b></div>
+      <div class="fuel-bar"><div class="fuel-fill" id="fuel-fill"></div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Импульс (ΔV)</h2>
+      <div class="slider-row">
+        <label for="s-dv">ΔV</label>
+        <input type="range" id="s-dv" min="0" max="30" step="0.5" value="0">
+        <span class="val" id="v-dv">0.0</span>
+      </div>
+      <div class="slider-row">
+        <label for="s-ang">Угол имп.</label>
+        <input type="range" id="s-ang" min="-180" max="180" step="1" value="0">
+        <span class="val" id="v-ang">0°</span>
+      </div>
+    </div>
+
+    <div class="buttons">
+      <button id="btn-start" class="primary">▶ Запуск</button>
+      <button id="btn-burn" disabled>💥 Импульс</button>
+      <button id="btn-reset">⟲ Заново</button>
+    </div>
+
+    <div id="msg" class="msg"></div>
+
+    <div class="panel selectors">
+      <h2>Выбор миссии</h2>
+      <div class="chips" id="mission-chips"></div>
+      <h2 style="margin-top:8px;">Выбор станции</h2>
+      <div class="chips" id="station-chips"></div>
+    </div>
+
+    <div class="buttons mobile-nudge">
+      <button id="btn-left">← Угол</button>
+      <button id="btn-right">Угол →</button>
+    </div>
+    <div class="buttons mobile-nudge">
+      <button id="btn-down">ΔV −</button>
+      <button id="btn-up">ΔV +</button>
+    </div>
+
+    <p class="hint">
+      Компьютер: ← → меняют угол, ↑ ↓ меняют ΔV, пробел — запуск,
+      B — импульс в полёте, R — заново.
+    </p>
   </div>
 
-  <div id="modal" class="modal hidden">
-    <div class="modal-content">
-      <h2 id="modal-title">Выбор миссии</h2>
-      <div id="modal-body"></div>
-      <button id="modal-close">Закрыть</button>
-    </div>
-  </div>
-
-</div>
-
-<script src="script.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
