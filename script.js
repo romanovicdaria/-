@@ -1,408 +1,903 @@
-// ===== Данные: уровни и спутники =====
-const LEVELS = [
-  { id: 'free', name: 'Свободный полёт', description: 'Тренировка без цели',
-    distance: 220, speed: 30, fuel: 30, timeLimit: 0,
-    stars: { time: 0, fuel: 0, precision: 0 },
-    objective: 'Свободная тренировка' },
-  { id: 'easy', name: 'Миссия 1: Первое сближение', description: 'Много топлива, медленный дрейф',
-    distance: 200, speed: 20, fuel: 40, timeLimit: 0,
-    stars: { time: 120, fuel: 10, precision: 5 },
-    objective: 'Дистанция < 5 м, скорость < 0.5 м/с' },
-  { id: 'normal', name: 'Миссия 2: V-bar подход', description: 'Стандартная стыковка по оси V',
-    distance: 180, speed: 25, fuel: 30, timeLimit: 180,
-    stars: { time: 150, fuel: 8, precision: 3 },
-    objective: 'Подойти по V-bar, мягкий контакт' },
-  { id: 'hard', name: 'Миссия 3: R-bar подход', description: 'Подход снизу, меньше топлива',
-    distance: 160, speed: 28, fuel: 22, timeLimit: 150,
-    stars: { time: 120, fuel: 5, precision: 2 },
-    objective: 'Подойти по R-bar, удержать позицию' },
-  { id: 'expert', name: 'Миссия 4: Вращающаяся станция', description: 'Станция дрейфует и вращается',
-    distance: 150, speed: 30, fuel: 18, timeLimit: 120,
-    stars: { time: 90, fuel: 4, precision: 1.5 },
-    objective: 'Стыковка с вращающейся станцией',
-    rotating: true, drift: 0.05 },
-  { id: 'emergency', name: 'Миссия 5: Аварийная стыковка', description: 'Мало топлива, мало времени',
-    distance: 140, speed: 35, fuel: 12, timeLimit: 90,
-    stars: { time: 70, fuel: 3, precision: 1 },
-    objective: 'Успеть до закрытия окна',
-    rotating: true, drift: 0.08 }
-];
+(function () {
+  'use strict';
 
-const SATELLITES = [
-  { id: 'soyuz', name: 'Союз МС', description: 'Сбалансированный корабль',
-    thrust: 1.0, fuel: 1.0, agility: 1.0, color: '#7ec8ff' },
-  { id: 'progress', name: 'Прогресс МС', description: 'Грузовик: много топлива, медленный',
-    thrust: 0.8, fuel: 1.5, agility: 0.7, color: '#9dd68a' },
-  { id: 'dragon', name: 'Crew Dragon', description: 'Быстрый, но прожорливый',
-    thrust: 1.3, fuel: 0.8, agility: 1.4, color: '#ffd75e' },
-  { id: 'tianzhou', name: 'Тяньчжоу', description: 'Тяжёлый, очень экономичный',
-    thrust: 0.7, fuel: 1.8, agility: 0.6, color: '#ff8fa3' },
-  { id: 'cygnus', name: 'Cygnus', description: 'Баланс груза и манёвра',
-    thrust: 1.0, fuel: 1.2, agility: 1.0, color: '#b48aff' }
-];
+  // ============================================================
+  //  УРОВНИ (МИССИИ)
+  // ============================================================
+  var MISSIONS = [
+    {
+      id: 'free',
+      name: 'Свободный полёт',
+      desc: 'Попади в зону стыковки с малой скоростью.',
+      start: { x: -220, y: 0, vx: 30, vy: 0 },
+      fuel: 30,
+      dockR: 42,
+      maxSpeed: 22,
+      timeLimit: 2400
+    },
+    {
+      id: 'rbar',
+      name: 'Подход сверху (R-bar)',
+      desc: 'Станция сверху. Подойди аккуратно.',
+      start: { x: 0, y: 200, vx: 0, vy: -20 },
+      fuel: 26,
+      dockR: 38,
+      maxSpeed: 18,
+      timeLimit: 2600
+    },
+    {
+      id: 'vbartight',
+      name: 'Узкий коридор (V-bar)',
+      desc: 'Попади в узкий коридор, скорость строго ниже 12.',
+      start: { x: -260, y: 0, vx: 25, vy: 0 },
+      fuel: 22,
+      dockR: 32,
+      maxSpeed: 12,
+      timeLimit: 2600
+    }
+  ];
 
-// ===== Состояние =====
-const state = {
-  level: LEVELS[0],
-  satellite: SATELLITES[0],
-  dist: 220, speed: 30, closing: -30,
-  time: 0, dv: 0, angle: 0,
-  fuel: 30, fuelMax: 30,
-  running: false, impulseQueued: false,
-  stars: [false, false, false],
-  history: [],
-  rotationPhase: 0, drift: 0,
-  message: ''
-};
+  // ============================================================
+  //  СТАНЦИИ
+  // ============================================================
+  var STATIONS = [
+    {
+      id: 'iss',
+      name: 'МКС-стиль',
+      // базовая станция — большая, с широкими панелями
+      scale: 1.0,
+      panels: 2,
+      color: '#ffb84d',
+      accentColor: '#c8842a'
+    },
+    {
+      id: 'mir',
+      name: '«Мир»',
+      scale: 0.85,
+      panels: 4,
+      color: '#d6e6ff',
+      accentColor: '#7d8a9c'
+    },
+    {
+      id: 'soyuz',
+      name: 'Модуль «Союз»',
+      scale: 0.7,
+      panels: 2,
+      color: '#a3e2b3',
+      accentColor: '#2e7d4f'
+    }
+  ];
 
-// ===== Canvas =====
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-let W = 0, H = 0;
-const DPR = Math.min(window.devicePixelRatio || 1, 2);
+  // ---------- Константы ----------
+  var SCALE = 1.6;
+  var STATION_R = 18;
+  var DT = 0.05;
+  var MAX_FUEL = 30;   // будет переопределяться миссией
+  var N = 0.09;
 
-function resize() {
-  W = canvas.clientWidth;
-  H = canvas.clientHeight;
-  canvas.width = W * DPR;
-  canvas.height = H * DPR;
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-}
-window.addEventListener('resize', resize);
+  // ---------- DOM ----------
+  var canvas = document.getElementById('scene');
+  var ctx = canvas.getContext('2d');
+  var msgEl = document.getElementById('msg');
+  var toastEl = document.getElementById('toast');
+  var hudDist = document.getElementById('hud-dist');
+  var hudSpeed = document.getElementById('hud-speed');
+  var hudRange = document.getElementById('hud-range');
+  var hudTime = document.getElementById('hud-time');
+  var hudDv = document.getElementById('hud-dv');
+  var hudGoal = document.getElementById('hud-goal');
+  var hudStatus = document.getElementById('hud-status');
+  var fuelNum = document.getElementById('fuel-num');
+  var fuelFill = document.getElementById('fuel-fill');
+  var missionNameEl = document.getElementById('mission-name');
+  var stationNameEl = document.getElementById('station-name');
 
-// ===== HUD =====
-const hud = {
-  dist: document.getElementById('hud-dist'),
-  speed: document.getElementById('hud-speed'),
-  closing: document.getElementById('hud-closing'),
-  time: document.getElementById('hud-time'),
-  dv: document.getElementById('hud-dv'),
-  fuel: document.getElementById('hud-fuel')
-};
+  var sDv = document.getElementById('s-dv');
+  var sAng = document.getElementById('s-ang');
+  var vDv = document.getElementById('v-dv');
+  var vAng = document.getElementById('v-ang');
 
-function updateHUD() {
-  hud.dist.textContent = state.dist.toFixed(1);
-  hud.speed.textContent = state.speed.toFixed(1);
-  hud.closing.textContent = state.closing.toFixed(1);
-  hud.time.textContent = state.time.toFixed(1);
-  hud.dv.textContent = state.dv.toFixed(1);
-  hud.fuel.textContent = state.fuel.toFixed(1) + ' / ' + state.fuelMax.toFixed(1);
-}
+  var btnStart = document.getElementById('btn-start');
+  var btnBurn = document.getElementById('btn-burn');
+  var btnReset = document.getElementById('btn-reset');
 
-function updateStars() {
-  document.querySelectorAll('.star').forEach((el, i) => {
-    el.classList.toggle('filled', !!state.stars[i]);
-  });
-}
+  // ---------- Текущие выборы ----------
+  var mission = MISSIONS[0];
+  var station = STATIONS[0];
 
-function updateMissionPanel() {
-  document.getElementById('mission-name').textContent = state.level.name;
-  document.getElementById('objective').textContent = state.level.objective;
-}
+  // ---------- Состояние ----------
+  var state = {
+    running: false,
+    finished: false,
+    t: 0,
+    step: 0,
+    ship: { x: 0, y: 0, vx: 0, vy: 0 },
+    totalDv: 0,
+    fuel: MAX_FUEL,
+    burnTimer: 0,
+    trail: [],
+    ghostTrails: [],   // прошлые траектории (полупрозрачные)
+    cam: { x: 0, y: 0 }
+  };
 
-// ===== Запуск =====
-function startLevel(level, satellite) {
-  state.level = level;
-  state.satellite = satellite;
-  state.dist = level.distance;
-  state.speed = level.speed;
-  state.closing = -level.speed;
-  state.time = 0;
-  state.dv = 0;
-  state.angle = 0;
-  state.fuelMax = level.fuel * satellite.fuel;
-  state.fuel = state.fuelMax;
-  state.running = false;
-  state.impulseQueued = false;
-  state.stars = [false, false, false];
-  state.history = [];
-  state.rotationPhase = 0;
-  state.drift = 0;
-  state.message = '';
-
-  updateHUD();
-  updateStars();
-  updateMissionPanel();
-}
-
-// ===== Физика =====
-const DT = 0.1;
-
-function physicsStep() {
-  if (!state.running) return;
-
-  if (state.level.drift) {
-    state.drift += state.level.drift * DT * 0.1;
-    state.dist += Math.sin(state.drift) * 0.3;
-  }
-  if (state.level.rotating) state.rotationPhase += 0.02;
-
-  if (state.impulseQueued) {
-    applyImpulse();
-    state.impulseQueued = false;
+  // ---------- Размер canvas ----------
+  function resize() {
+    var wrap = canvas.parentElement;
+    var dpr = window.devicePixelRatio || 1;
+    var w = wrap.clientWidth;
+    var h = wrap.clientHeight;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw();
   }
 
-  state.dist -= state.speed * DT * 0.5;
-  state.closing = -state.speed;
-  state.speed *= 0.999;
-  state.time += DT;
+  // ---------- Координаты ----------
+  function toScreen(x, y) {
+    var w = canvas.clientWidth;
+    var h = canvas.clientHeight;
+    return {
+      x: w / 2 + (x - state.cam.x) * SCALE,
+      y: h / 2 - (y - state.cam.y) * SCALE
+    };
+  }
 
-  state.history.push({ d: state.dist, s: state.speed, t: state.time });
-  if (state.history.length > 400) state.history.shift();
+  // ---------- Ползунки ----------
+  function syncOutputs() {
+    vDv.textContent = parseFloat(sDv.value).toFixed(1);
+    vAng.textContent = parseFloat(sAng.value).toFixed(0) + '°';
+  }
 
-  checkWin();
-
-  if (state.level.timeLimit && state.time > state.level.timeLimit && !state.message) {
+  // ---------- Сброс ----------
+  function resetRound(resetFuel) {
     state.running = false;
-    state.message = 'Время вышло';
+    state.finished = false;
+    state.t = 0;
+    state.step = 0;
+    state.trail = [];
+    state.burnTimer = 0;
+    state.totalDv = 0;
+    state.cam.x = 0;
+    state.cam.y = 0;
+
+    if (state.ship.x !== 0 || state.ship.y !== 0) {
+      state.ghostTrails.push(state.trail.slice());
+      if (state.ghostTrails.length > 3) state.ghostTrails.shift();
+    }
+
+    if (resetFuel) {
+      sDv.value = 0;
+      sAng.value = 0;
+      syncOutputs();
+    }
+
+    state.fuel = mission.fuel;
+    state.ship.x = mission.start.x;
+    state.ship.y = mission.start.y;
+    state.ship.vx = mission.start.vx;
+    state.ship.vy = mission.start.vy;
+
+    msgEl.className = 'msg';
+    msgEl.textContent = '';
+    hudStatus.textContent = 'ожидание';
+    hudStatus.style.color = '';
+    btnBurn.disabled = true;
+
+    updateHud();
+    updateFuel();
+    draw();
   }
 
-  updateHUD();
-}
+  // ---------- Старт ----------
+  function startSim() {
+    if (state.running) return;
+    resetRound(false);
 
-function applyImpulse() {
-  const sat = state.satellite;
-  const dv = state.dv * sat.thrust;
-  const rad = state.angle * Math.PI / 180;
+    // Стартовый импульс из ползунков
+    var dv0 = parseFloat(sDv.value);
+    var ang0 = parseFloat(sAng.value);
+    if (dv0 > state.fuel) dv0 = state.fuel;
+    if (dv0 > 0) {
+      var rad = ang0 * Math.PI / 180;
+      state.ship.vx += dv0 * Math.cos(rad);
+      state.ship.vy += dv0 * Math.sin(rad);
+      state.totalDv += dv0;
+      state.fuel -= dv0;
+      state.burnTimer = 0.4;
+      updateFuel();
+    }
 
-  const forward = -Math.cos(rad) * dv;
-  const lateral = Math.sin(rad) * dv;
+    state.running = true;
+    state.finished = false;
+    hudStatus.textContent = 'полёт';
+    hudStatus.style.color = '#4da6ff';
+    msgEl.className = 'msg';
+    msgEl.textContent = '';
+    btnBurn.disabled = false;
+    requestAnimationFrame(loop);
+  }
 
-  state.speed += forward;
-  state.dist += lateral * 0.5;
+  // ---------- Импульс в полёте ----------
+  function burnNow() {
+    if (!state.running || state.finished) return;
+    var dv = parseFloat(sDv.value);
+    var ang = parseFloat(sAng.value);
+    if (dv <= 0) return;
+    if (dv > state.fuel) dv = state.fuel;
+    if (dv <= 0) return;
 
-  state.fuel = Math.max(0, state.fuel - Math.abs(dv) * 0.5);
-  if (state.fuel <= 0 && !state.message) {
+    var shipAngle = Math.atan2(state.ship.vy, state.ship.vx);
+    if (state.ship.vx === 0 && state.ship.vy === 0) shipAngle = 0;
+    var rad = shipAngle + ang * Math.PI / 180;
+
+    state.ship.vx += dv * Math.cos(rad);
+    state.ship.vy += dv * Math.sin(rad);
+    state.totalDv += dv;
+    state.fuel -= dv;
+    state.burnTimer = 0.4;
+    updateFuel();
+    updateHud();
+    showToast('Импульс +' + dv.toFixed(1));
+  }
+
+  // ---------- Физика HCW ----------
+  function stepPhysics() {
+    if (state.finished) return;
+
+    var n = N;
+    var vxHCW = -state.ship.vy;
+    var axHCW = 3 * n * n * (-state.ship.y) + 2 * n * vxHCW;
+    var ayHCW = -2 * n * state.ship.vx;
+
+    var axScreen = ayHCW;
+    var ayScreen = -axHCW;
+
+    state.ship.vx += axScreen * DT;
+    state.ship.vy += ayScreen * DT;
+
+    state.ship.x += state.ship.vx * DT;
+    state.ship.y += state.ship.vy * DT;
+    state.t += DT;
+    state.step++;
+
+    if (state.burnTimer > 0) state.burnTimer -= DT;
+
+    if (state.step % 2 === 0) {
+      state.trail.push({ x: state.ship.x, y: state.ship.y });
+      if (state.trail.length > 900) state.trail.shift();
+    }
+
+    updateCamera();
+    checkResult();
+  }
+
+  function updateCamera() {
+    var tx = state.ship.x * 0.55;
+    var ty = state.ship.y * 0.55;
+    var maxCam = 260;
+    if (tx > maxCam) tx = maxCam;
+    if (tx < -maxCam) tx = -maxCam;
+    if (ty > maxCam) ty = maxCam;
+    if (ty < -maxCam) ty = -maxCam;
+    state.cam.x += (tx - state.cam.x) * 0.08;
+    state.cam.y += (ty - state.cam.y) * 0.08;
+  }
+
+  function checkResult() {
+    var dx = state.ship.x;
+    var dy = state.ship.y;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    var speed = Math.sqrt(state.ship.vx * state.ship.vx + state.ship.vy * state.ship.vy);
+
+    if (dist <= mission.dockR && speed <= mission.maxSpeed) {
+      finish(true, 'Успешная стыковка! Миссия «' + mission.name + '» выполнена. ' +
+        'Расстояние ' + dist.toFixed(1) + ', скорость ' + speed.toFixed(1) + '.');
+      return;
+    }
+    if (Math.abs(state.ship.x) > 1200 || Math.abs(state.ship.y) > 900) {
+      finish(false, 'Аппарат ушёл за пределы зоны.');
+      return;
+    }
+    if (dist < STATION_R * 0.6) {
+      finish(false, 'Столкновение со станцией! Скорость ' + speed.toFixed(1) + '.');
+      return;
+    }
+    if (state.step >= mission.timeLimit) {
+      finish(false, 'Время вышло. Расстояние ' + dist.toFixed(1) + '.');
+      return;
+    }
+  }
+
+  function finish(ok, text) {
     state.running = false;
-    state.message = 'Топливо закончилось';
+    state.finished = true;
+    hudStatus.textContent = ok ? 'успех' : 'неудача';
+    hudStatus.style.color = ok ? '#4cd964' : '#ff4d4d';
+    msgEl.className = 'msg show ' + (ok ? 'ok' : 'err');
+    msgEl.textContent = text;
+    btnBurn.disabled = true;
+    updateHud();
+    draw();
   }
-}
 
-function checkWin() {
-  const p = state.level.stars.precision || 3;
-  if (state.dist < p && Math.abs(state.speed) < 0.5) {
-    state.running = false;
-    evaluateStars();
+  // ---------- HUD ----------
+  function updateHud() {
+    var dx = state.ship.x;
+    var dy = state.ship.y;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    var speed = Math.sqrt(state.ship.vx * state.ship.vx + state.ship.vy * state.ship.vy);
+
+    var rangeRate = 0;
+    if (dist > 0.001) {
+      var nx = dx / dist;
+      var ny = dy / dist;
+      rangeRate = -(state.ship.vx * nx + state.ship.vy * ny);
+    }
+
+    hudDist.textContent = dist.toFixed(1);
+    hudSpeed.textContent = speed.toFixed(1);
+    hudRange.textContent = rangeRate.toFixed(1);
+    hudTime.textContent = state.t.toFixed(1);
+    hudDv.textContent = state.totalDv.toFixed(1);
+    hudGoal.textContent = '≤' + mission.maxSpeed + ' / ' + mission.dockR;
   }
-}
 
-function evaluateStars() {
-  const lv = state.level;
-  if (!lv.stars.time) {
-    state.message = 'Стыковка выполнена!';
-    return;
+  function updateFuel() {
+    fuelNum.textContent = state.fuel.toFixed(1) + ' / ' + mission.fuel;
+    var pct = Math.max(0, Math.min(1, state.fuel / mission.fuel));
+    fuelFill.style.width = (pct * 100).toFixed(1) + '%';
   }
-  state.stars[0] = state.time <= lv.stars.time;
-  state.stars[1] = (state.fuelMax - state.fuel) <= lv.stars.fuel;
-  state.stars[2] = state.dist < lv.stars.precision;
-  updateStars();
-  const total = state.stars.filter(Boolean).length;
-  state.message = 'Стыковка! Звёзд: ' + total + '/3';
-}
 
-// ===== Отрисовка =====
-const bgStars = [];
-for (let i = 0; i < 120; i++) {
-  bgStars.push({ x: Math.random(), y: Math.random(), r: Math.random() * 1.2 });
-}
+  // ---------- Уведомления ----------
+  var toastTimer = null;
+  function showToast(text) {
+    toastEl.textContent = text;
+    toastEl.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      toastEl.classList.remove('show');
+    }, 900);
+  }
 
-function draw() {
-  ctx.clearRect(0, 0, W, H);
+  // ============================================================
+  //  Отрисовка
+  // ============================================================
+  function makeStars(w, h) {
+    var n = Math.min(220, Math.floor(w * h / 5500));
+    var arr = [];
+    for (var i = 0; i < n; i++) {
+      arr.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        r: Math.random() * 1.4 + 0.15,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.3 + Math.random() * 0.8,
+        layer: Math.random() < 0.5 ? 1 : (Math.random() < 0.6 ? 2 : 3)
+      });
+    }
+    return arr;
+  }
 
-  const cx = W / 2;
-  const cy = H / 2;
-  const scale = Math.min(W, H) / 500;
+  function drawStars(w, h, t) {
+    if (!drawStars._stars || drawStars._w !== w || drawStars._h !== h) {
+      drawStars._stars = makeStars(w, h);
+      drawStars._w = w;
+      drawStars._h = h;
+    }
+    var stars = drawStars._stars;
+    for (var i = 0; i < stars.length; i++) {
+      var s = stars[i];
+      var alpha = 0.35 + 0.4 * (0.5 + 0.5 * Math.sin(t * s.speed + s.phase));
+      var offsetX = (state.cam.x * 0.05) * s.layer;
+      var offsetY = (state.cam.y * 0.05) * s.layer;
+      var x = s.x + offsetX;
+      var y = s.y - offsetY;
+      x = ((x % w) + w) % w;
+      y = ((y % h) + h) % h;
+      ctx.fillStyle = 'rgba(255,255,255,' + alpha.toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.arc(x, y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 
-  // Фон — звёзды
-  ctx.fillStyle = 'rgba(200, 220, 255, 0.6)';
-  bgStars.forEach(s => {
+  function drawGrid() {
+    var w = canvas.clientWidth;
+    var h = canvas.clientHeight;
+    var stepPx = 40;
+    var origin = toScreen(0, 0);
+    var startX = ((origin.x % stepPx) + stepPx) % stepPx;
+    var startY = ((origin.y % stepPx) + stepPx) % stepPx;
+
+    ctx.strokeStyle = 'rgba(120,160,220,0.08)';
+    ctx.lineWidth = 1;
+    for (var x = startX; x < w; x += stepPx) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    }
+    for (var y = startY; y < h; y += stepPx) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    }
+
+    ctx.strokeStyle = 'rgba(160,210,255,0.28)';
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
-    ctx.arc(s.x * W, s.y * H, s.r, 0, Math.PI * 2);
+    ctx.moveTo(0, origin.y); ctx.lineTo(w, origin.y);
+    ctx.moveTo(origin.x, 0); ctx.lineTo(origin.x, h);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(160,210,255,0.55)';
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('V-bar', 8, origin.y - 6);
+    ctx.fillText('R-bar', origin.x + 6, 14);
+  }
+
+  // ----- Станции -----
+  function drawStation(cx, cy) {
+    var sc = station.scale;
+    var r = STATION_R * SCALE * 0.5 * sc;
+
+    // свечение
+    var glow = ctx.createRadialGradient(cx, cy, r, cx, cy, r * 3.4);
+    glow.addColorStop(0, hexToRgba(station.color, 0.3));
+    glow.addColorStop(1, hexToRgba(station.color, 0));
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 3.4, 0, Math.PI * 2);
+    ctx.fillStyle = glow;
     ctx.fill();
-  });
 
-  // Орбита
-  ctx.strokeStyle = 'rgba(80, 140, 220, 0.3)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, 180 * scale, 100 * scale, 0, 0, Math.PI * 2);
-  ctx.stroke();
+    // панели
+    var panelW = 52 * sc, panelH = 14 * sc;
+    if (station.id === 'mir') {
+      // 4 панели: 2 слева, 2 справа (друг над другом)
+      drawSolarPanel(cx - r - panelW - 6, cy - panelH - 2, panelW, panelH);
+      drawSolarPanel(cx - r - panelW - 6, cy + 2, panelW, panelH);
+      drawSolarPanel(cx + r + 6, cy - panelH - 2, panelW, panelH);
+      drawSolarPanel(cx + r + 6, cy + 2, panelW, panelH);
+    } else {
+      drawSolarPanel(cx - r - panelW - 6, cy - panelH / 2, panelW, panelH);
+      drawSolarPanel(cx + r + 6, cy - panelH / 2, panelW, panelH);
+    }
 
-  // Оси
-  ctx.strokeStyle = 'rgba(100, 160, 240, 0.15)';
-  ctx.setLineDash([5, 5]);
-  ctx.beginPath();
-  ctx.moveTo(cx - 200 * scale, cy); ctx.lineTo(cx + 200 * scale, cy);
-  ctx.moveTo(cx, cy - 150 * scale); ctx.lineTo(cx, cy + 150 * scale);
-  ctx.stroke();
-  ctx.setLineDash([]);
+    // тяги к панелям
+    ctx.strokeStyle = '#7d8a9c';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - r, cy); ctx.lineTo(cx - r - 6, cy);
+    ctx.moveTo(cx + r, cy); ctx.lineTo(cx + r + 6, cy);
+    ctx.stroke();
 
-  // Траектория
-  if (state.history.length > 1) {
-    ctx.strokeStyle = 'rgba(126, 200, 255, 0.6)';
+    // корпус
+    var bodyW = r * 2.2;
+    var bodyH = r * 1.4;
+    var grad = ctx.createLinearGradient(cx - bodyW/2, cy - bodyH/2, cx + bodyW/2, cy + bodyH/2);
+    grad.addColorStop(0, lighten(station.color, 0.4));
+    grad.addColorStop(0.45, station.color);
+    grad.addColorStop(1, station.accentColor);
+    ctx.fillStyle = grad;
+    roundedRect(cx - bodyW/2, cy - bodyH/2, bodyW, bodyH, 6);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // блик
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.fillRect(cx - bodyW/2 + 6, cy - bodyH/2 + 3, bodyW - 12, 2);
+
+    // иллюминаторы
+    ctx.fillStyle = station.id === 'soyuz' ? '#baf5cd' : 'rgba(120,200,255,0.9)';
+    ctx.beginPath();
+    ctx.arc(cx - 8, cy, 3, 0, Math.PI * 2);
+    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+    ctx.arc(cx + 8, cy, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // стыковочный узел
+    ctx.fillStyle = '#fff3d6';
+    ctx.beginPath();
+    ctx.arc(cx + bodyW/2 + 5, cy, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = station.accentColor;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    // верхний купол
+    ctx.fillStyle = station.accentColor;
+    ctx.beginPath();
+    ctx.arc(cx, cy - bodyH/2 - 6, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.stroke();
+
+    // антенна
+    ctx.strokeStyle = '#9aa7b8';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    state.history.forEach((pt, i) => {
-      const x = cx + (pt.d / 220) * 180 * scale;
-      const y = cy + (pt.s / 40) * 80 * scale;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
+    ctx.moveTo(cx, cy - bodyH/2 - 12);
+    ctx.lineTo(cx, cy - bodyH/2 - 22);
+    ctx.stroke();
+    ctx.fillStyle = '#c9d4e2';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - bodyH/2 - 24, 7, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // подпись
+    ctx.fillStyle = hexToRgba(station.color, 0.95);
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(station.name.toUpperCase(), cx, cy + bodyH/2 + 24);
+  }
+
+  function drawSolarPanel(x, y, w, h) {
+    var g = ctx.createLinearGradient(x, y, x, y + h);
+    g.addColorStop(0, '#2b4d78');
+    g.addColorStop(0.5, '#3d6ea8');
+    g.addColorStop(1, '#1c3455');
+    ctx.fillStyle = g;
+    roundedRect(x, y, w, h, 3);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(160,210,255,0.7)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(160,210,255,0.35)';
+    for (var i = 1; i < 5; i++) {
+      var gx = x + i * (w / 5);
+      ctx.beginPath(); ctx.moveTo(gx, y); ctx.lineTo(gx, y + h); ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.moveTo(x, y + h / 2); ctx.lineTo(x + w, y + h / 2);
     ctx.stroke();
   }
 
-  // Коридор стыковки
-  ctx.strokeStyle = 'rgba(255, 215, 94, 0.4)';
-  ctx.setLineDash([3, 3]);
-  ctx.beginPath();
-  ctx.arc(cx, cy, (state.level.stars.precision || 5) * scale * 4, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.setLineDash([]);
+  // ----- Корабль -----
+  function drawShip(px, py, burning) {
+    var angle = 0;
+    if (state.ship.vx !== 0 || state.ship.vy !== 0) {
+      angle = Math.atan2(-state.ship.vy, state.ship.vx);
+    }
 
-  // Станция
-  const rot = state.level.rotating ? state.rotationPhase : 0;
-  drawStation(cx, cy, 22 * scale, rot);
+    var glow = ctx.createRadialGradient(px, py, 2, px, py, 18);
+    glow.addColorStop(0, 'rgba(77,166,255,0.45)');
+    glow.addColorStop(1, 'rgba(77,166,255,0)');
+    ctx.beginPath();
+    ctx.arc(px, py, 18, 0, Math.PI * 2);
+    ctx.fillStyle = glow;
+    ctx.fill();
 
-  // Корабль
-  const shipX = cx + (state.dist / 220) * 180 * scale;
-  const shipY = cy + (state.speed / 40) * 80 * scale;
-  drawShip(shipX, shipY, 12 * scale, state.satellite.color);
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(angle);
 
-  // Вектор скорости
-  ctx.strokeStyle = '#7ec8ff';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(shipX, shipY);
-  ctx.lineTo(shipX + 30 * scale, shipY - 10 * scale);
-  ctx.stroke();
+    if (burning) {
+      var flameLen = 16 + Math.random() * 8;
+      var fg = ctx.createLinearGradient(-10, 0, -10 - flameLen, 0);
+      fg.addColorStop(0, 'rgba(255,255,200,0.95)');
+      fg.addColorStop(0.4, 'rgba(255,180,60,0.7)');
+      fg.addColorStop(1, 'rgba(255,80,20,0)');
+      ctx.fillStyle = fg;
+      ctx.beginPath();
+      ctx.moveTo(-10, -5);
+      ctx.lineTo(-10 - flameLen, 0);
+      ctx.lineTo(-10, 5);
+      ctx.closePath();
+      ctx.fill();
+    }
 
-  // Сообщение
-  if (state.message) {
-    ctx.fillStyle = '#ffd75e';
-    ctx.font = 'bold 18px Segoe UI, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(state.message, cx, 40);
+    ctx.fillStyle = '#4a5a72';
+    ctx.beginPath();
+    ctx.moveTo(-8, -5); ctx.lineTo(-12, -6); ctx.lineTo(-12, 6); ctx.lineTo(-8, 5);
+    ctx.closePath();
+    ctx.fill();
+
+    var g = ctx.createLinearGradient(0, -8, 0, 8);
+    g.addColorStop(0, '#cfe6ff');
+    g.addColorStop(0.5, '#5fb0ff');
+    g.addColorStop(1, '#1f5c9c');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(16, 0); ctx.lineTo(6, -8); ctx.lineTo(-8, -7); ctx.lineTo(-8, 7); ctx.lineTo(6, 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    var cg = ctx.createRadialGradient(6, -2, 1, 6, -2, 5);
+    cg.addColorStop(0, 'rgba(220,245,255,1)');
+    cg.addColorStop(1, 'rgba(90,170,220,0.8)');
+    ctx.fillStyle = cg;
+    ctx.beginPath();
+    ctx.arc(6, -2, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath(); ctx.moveTo(-8, 0); ctx.lineTo(14, 0); ctx.stroke();
+    ctx.restore();
   }
-}
 
-function drawStation(x, y, r, rot) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(rot);
-  ctx.fillStyle = '#3a6ea5';
-  ctx.strokeStyle = '#7ec8ff';
-  ctx.lineWidth = 2;
-  ctx.fillRect(-r * 2, -r * 0.3, r * 1.5, r * 0.6);
-  ctx.fillRect(r * 0.5, -r * 0.3, r * 1.5, r * 0.6);
-  ctx.beginPath();
-  ctx.arc(0, 0, r * 0.7, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = '#ffd75e';
-  ctx.beginPath();
-  ctx.arc(0, 0, r * 0.25, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
-function drawShip(x, y, r, color) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.fillStyle = color;
-  ctx.strokeStyle = '#e8f3ff';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(r, 0);
-  ctx.lineTo(-r * 0.7, -r * 0.6);
-  ctx.lineTo(-r * 0.7, r * 0.6);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  ctx.restore();
-}
-
-// ===== Игровой цикл =====
-let acc = 0;
-let last = performance.now();
-function loop(now) {
-  const dt = Math.min((now - last) / 1000, 0.1);
-  last = now;
-  acc += dt;
-  while (acc >= DT) {
-    physicsStep();
-    acc -= DT;
+  function roundedRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
   }
-  draw();
-  requestAnimationFrame(loop);
-}
 
-// ===== Управление =====
-document.addEventListener('keydown', (e) => {
-  if (e.code === 'ArrowLeft')  state.angle = (state.angle - 5 + 360) % 360;
-  if (e.code === 'ArrowRight') state.angle = (state.angle + 5) % 360;
-  if (e.code === 'ArrowUp')    state.dv = Math.min(state.dv + 1, 20);
-  if (e.code === 'ArrowDown')  state.dv = Math.max(state.dv - 1, 0);
-  if (e.code === 'Space') { state.running = true; state.impulseQueued = true; }
-  if (e.code === 'KeyB')  state.impulseQueued = true;
-  if (e.code === 'KeyR')  startLevel(state.level, state.satellite);
-});
+  function hexToRgba(hex, alpha) {
+    var h = hex.replace('#','');
+    if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    var r = parseInt(h.substr(0,2),16);
+    var g = parseInt(h.substr(2,2),16);
+    var b = parseInt(h.substr(4,2),16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+  }
+  function lighten(hex, k) {
+    var h = hex.replace('#','');
+    if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    var r = parseInt(h.substr(0,2),16);
+    var g = parseInt(h.substr(2,2),16);
+    var b = parseInt(h.substr(4,2),16);
+    r = Math.min(255, Math.round(r + (255 - r) * k));
+    g = Math.min(255, Math.round(g + (255 - g) * k));
+    b = Math.min(255, Math.round(b + (255 - b) * k));
+    return 'rgb(' + r + ',' + g + ',' + b + ')';
+  }
 
-document.querySelectorAll('[data-dir]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const d = btn.dataset.dir;
-    const step = (state.satellite.agility || 1) * 10;
-    if (d === 'left')  state.angle = (state.angle - step + 360) % 360;
-    if (d === 'right') state.angle = (state.angle + step) % 360;
-    if (d === 'up')    state.dv = Math.min(state.dv + 1, 20);
-    if (d === 'down')  state.dv = Math.max(state.dv - 1, 0);
-  });
-});
+  // ----- Стрелка-указатель на станцию -----
+  function drawStationPointer() {
+    var w = canvas.clientWidth, h = canvas.clientHeight;
+    var st = toScreen(0, 0);
+    var margin = 24;
+    var visible = st.x > margin && st.x < w - margin && st.y > margin && st.y < h - margin;
+    if (visible) return;
 
-document.getElementById('btn-impulse').addEventListener('click', () => {
-  state.running = true;
-  state.impulseQueued = true;
-});
-document.getElementById('btn-restart').addEventListener('click', () => {
-  startLevel(state.level, state.satellite);
-});
+    var cx = w / 2, cy = h / 2;
+    var dx = st.x - cx, dy = st.y - cy;
+    var ang = Math.atan2(dy, dx);
+    var rx = w/2 - margin, ry = h/2 - margin;
+    var t = Math.min(Math.abs(rx / (Math.cos(ang) || 0.001)),
+                     Math.abs(ry / (Math.sin(ang) || 0.001)));
+    var px = cx + Math.cos(ang) * t;
+    var py = cy + Math.sin(ang) * t;
 
-// ===== Модалка =====
-const modal = document.getElementById('modal');
-const modalTitle = document.getElementById('modal-title');
-const modalBody = document.getElementById('modal-body');
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(ang);
+    ctx.fillStyle = hexToRgba(station.color, 0.9);
+    ctx.beginPath();
+    ctx.moveTo(10, 0); ctx.lineTo(-6, -6); ctx.lineTo(-6, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
 
-function openModal(title, items, onSelect, activeId) {
-  modalTitle.textContent = title;
-  modalBody.innerHTML = '';
-  items.forEach(item => {
-    const card = document.createElement('div');
-    card.className = 'card' + (item.id === activeId ? ' active' : '');
-    card.innerHTML = '<h3>' + item.name + '</h3><p>' + (item.description || '') + '</p>';
-    card.addEventListener('click', () => {
-      onSelect(item);
-      modal.classList.add('hidden');
+  // ---------- Общая отрисовка ----------
+  var tAnimation = 0;
+
+  function draw() {
+    var w = canvas.clientWidth;
+    var h = canvas.clientHeight;
+    tAnimation += 0.016;
+
+    ctx.clearRect(0, 0, w, h);
+
+    drawStars(w, h, tAnimation);
+    drawGrid();
+
+    var st = toScreen(0, 0);
+
+    var dist = Math.sqrt(state.ship.x * state.ship.x + state.ship.y * state.ship.y);
+    var speed = Math.sqrt(state.ship.vx * state.ship.vx + state.ship.vy * state.ship.vy);
+    var inDock = dist <= mission.dockR;
+    var okSpeed = speed <= mission.maxSpeed;
+
+    // Призрачные прошлые траектории
+    for (var g = 0; g < state.ghostTrails.length; g++) {
+      var gt = state.ghostTrails[g];
+      if (gt.length < 2) continue;
+      ctx.beginPath();
+      for (var i = 0; i < gt.length; i++) {
+        var p = toScreen(gt[i].x, gt[i].y);
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      }
+      ctx.strokeStyle = 'rgba(120, 160, 220, 0.15)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+
+    // Коридор — конус от станции
+    ctx.save();
+    ctx.translate(st.x, st.y);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, mission.dockR * SCALE * 6, Math.PI * 0.7, Math.PI * 1.3);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(76, 217, 100, 0.05)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(76, 217, 100, 0.2)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+
+    // Радиус стыковки
+    var dockStroke = 'rgba(76, 217, 100, 0.5)';
+    var dockFill = null;
+    if (inDock && okSpeed) {
+      dockStroke = 'rgba(76, 217, 100, 0.95)';
+      dockFill = 'rgba(76, 217, 100, 0.15)';
+    } else if (inDock && !okSpeed) {
+      dockStroke = 'rgba(255, 77, 77, 0.9)';
+      dockFill = 'rgba(255, 77, 77, 0.12)';
+    }
+    if (dockFill) {
+      ctx.beginPath();
+      ctx.arc(st.x, st.y, mission.dockR * SCALE, 0, Math.PI * 2);
+      ctx.fillStyle = dockFill;
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.arc(st.x, st.y, mission.dockR * SCALE, 0, Math.PI * 2);
+    ctx.strokeStyle = dockStroke;
+    ctx.setLineDash([5, 5]);
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // След
+    if (state.trail.length > 1) {
+      ctx.beginPath();
+      for (var k = 0; k < state.trail.length; k++) {
+        var p2 = toScreen(state.trail[k].x, state.trail[k].y);
+        if (k === 0) ctx.moveTo(p2.x, p2.y);
+        else ctx.lineTo(p2.x, p2.y);
+      }
+      ctx.strokeStyle = 'rgba(77, 166, 255, 0.55)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    drawStation(st.x, st.y);
+
+    var sp = toScreen(state.ship.x, state.ship.y);
+    drawShip(sp.x, sp.y, state.burnTimer > 0);
+
+    if (speed > 0.5) {
+      var kk = 0.6;
+      ctx.beginPath();
+      ctx.moveTo(sp.x, sp.y);
+      ctx.lineTo(sp.x + state.ship.vx * kk, sp.y - state.ship.vy * kk);
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    drawStationPointer();
+  }
+
+  function loop() {
+    if (!state.running) {
+      // Плавная анимация звёзд и после окончания
+      draw();
+      requestAnimationFrame(loop);
+      return;
+    }
+    for (var i = 0; i < 2; i++) {
+      if (state.running) stepPhysics();
+    }
+    updateHud();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- Корректировка ----------
+  function nudge(dvDelta, angDelta) {
+    var dv = parseFloat(sDv.value) + dvDelta;
+    dv = Math.min(30, Math.max(0, dv));
+    sDv.value = dv;
+    var ang = parseFloat(sAng.value) + angDelta;
+    while (ang > 180) ang -= 360;
+    while (ang < -180) ang += 360;
+    sAng.value = ang;
+    syncOutputs();
+  }
+
+  function holdButton(id, fn) {
+    var el = document.getElementById(id);
+    var timer = null;
+    function start(e) { e.preventDefault(); fn(); timer = setInterval(fn, 80); }
+    function stop() { if (timer) { clearInterval(timer); timer = null; } }
+    el.addEventListener('mousedown', start);
+    el.addEventListener('touchstart', start, { passive: false });
+    el.addEventListener('mouseup', stop);
+    el.addEventListener('mouseleave', stop);
+    el.addEventListener('touchend', stop);
+    el.addEventListener('touchcancel', stop);
+  }
+
+  // ---------- Выбор миссий / станций ----------
+  function renderChips() {
+    var mc = document.getElementById('mission-chips');
+    mc.innerHTML = '';
+    MISSIONS.forEach(function (m) {
+      var b = document.createElement('button');
+      b.className = 'chip' + (m.id === mission.id ? ' active' : '');
+      b.textContent = m.name;
+      b.title = m.desc;
+      b.addEventListener('click', function () {
+        mission = m;
+        missionNameEl.textContent = m.name;
+        renderChips();
+        resetRound(true);
+      });
+      mc.appendChild(b);
     });
-    modalBody.appendChild(card);
+
+    var sc = document.getElementById('station-chips');
+    sc.innerHTML = '';
+    STATIONS.forEach(function (s) {
+      var b = document.createElement('button');
+      b.className = 'chip' + (s.id === station.id ? ' active' : '');
+      b.textContent = s.name;
+      b.addEventListener('click', function () {
+        station = s;
+        stationNameEl.textContent = s.name;
+        renderChips();
+        draw();
+      });
+      sc.appendChild(b);
+    });
+  }
+
+  // ---------- Обработчики ----------
+  sDv.addEventListener('input', function () { syncOutputs(); });
+  sAng.addEventListener('input', function () { syncOutputs(); });
+
+  btnStart.addEventListener('click', startSim);
+  btnBurn.addEventListener('click', burnNow);
+  btnReset.addEventListener('click', function () {
+    state.running = false;
+    resetRound(true);
   });
-  modal.classList.remove('hidden');
-}
 
-document.getElementById('open-missions').addEventListener('click', () => {
-  openModal('Выбор миссии', LEVELS, (lv) => startLevel(lv, state.satellite), state.level.id);
-});
+  holdButton('btn-left', function () { nudge(0, -2); });
+  holdButton('btn-right', function () { nudge(0, 2); });
+  holdButton('btn-up', function () { nudge(1, 0); });
+  holdButton('btn-down', function () { nudge(-1, 0); });
 
-document.getElementById('open-satellites').addEventListener('click', () => {
-  openModal('Выбор спутника', SATELLITES, (sat) => {
-    state.satellite = sat;
-    startLevel(state.level, sat);
-  }, state.satellite.id);
-});
+  window.addEventListener('keydown', function (e) {
+    switch (e.key) {
+      case 'ArrowLeft': nudge(0, -2); e.preventDefault(); break;
+      case 'ArrowRight': nudge(0, 2); e.preventDefault(); break;
+      case 'ArrowUp': nudge(1, 0); e.preventDefault(); break;
+      case 'ArrowDown': nudge(-1, 0); e.preventDefault(); break;
+      case ' ': startSim(); e.preventDefault(); break;
+      case 'b': case 'B': case 'и': case 'И':
+        burnNow(); e.preventDefault(); break;
+      case 'r': case 'R': case 'к': case 'К':
+        state.running = false; resetRound(true); break;
+    }
+  });
 
-document.getElementById('modal-close').addEventListener('click', () => {
-  modal.classList.add('hidden');
-});
+  window.addEventListener('resize', resize);
 
-// ===== Инициализация =====
-resize();
-startLevel(LEVELS[0], SATELLITES[0]);
-requestAnimationFrame(loop);
+  // ---------- Инициализация ----------
+  missionNameEl.textContent = mission.name;
+  stationNameEl.textContent = station.name;
+  renderChips();
+  syncOutputs();
+  resetRound(true);
+  resize();
+  requestAnimationFrame(loop);
+})();
