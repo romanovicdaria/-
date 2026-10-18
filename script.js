@@ -44,7 +44,6 @@
     {
       id: 'iss',
       name: 'МКС-стиль',
-      // базовая станция — большая, с широкими панелями
       scale: 1.0,
       panels: 2,
       color: '#ffb84d',
@@ -72,7 +71,6 @@
   var SCALE = 1.6;
   var STATION_R = 18;
   var DT = 0.05;
-  var MAX_FUEL = 30;   // будет переопределяться миссией
   var N = 0.09;
 
   // ---------- DOM ----------
@@ -113,10 +111,10 @@
     step: 0,
     ship: { x: 0, y: 0, vx: 0, vy: 0 },
     totalDv: 0,
-    fuel: MAX_FUEL,
+    fuel: 30,
     burnTimer: 0,
     trail: [],
-    ghostTrails: [],   // прошлые траектории (полупрозрачные)
+    ghostTrails: [],
     cam: { x: 0, y: 0 }
   };
 
@@ -149,7 +147,7 @@
   }
 
   // ---------- Сброс ----------
-  function resetRound(resetFuel) {
+  function resetRound(resetSliders) {
     state.running = false;
     state.finished = false;
     state.t = 0;
@@ -165,7 +163,7 @@
       if (state.ghostTrails.length > 3) state.ghostTrails.shift();
     }
 
-    if (resetFuel) {
+    if (resetSliders) {
       sDv.value = 0;
       sAng.value = 0;
       syncOutputs();
@@ -193,7 +191,6 @@
     if (state.running) return;
     resetRound(false);
 
-    // Стартовый импульс из ползунков
     var dv0 = parseFloat(sDv.value);
     var ang0 = parseFloat(sAng.value);
     if (dv0 > state.fuel) dv0 = state.fuel;
@@ -437,7 +434,6 @@
     var sc = station.scale;
     var r = STATION_R * SCALE * 0.5 * sc;
 
-    // свечение
     var glow = ctx.createRadialGradient(cx, cy, r, cx, cy, r * 3.4);
     glow.addColorStop(0, hexToRgba(station.color, 0.3));
     glow.addColorStop(1, hexToRgba(station.color, 0));
@@ -446,10 +442,8 @@
     ctx.fillStyle = glow;
     ctx.fill();
 
-    // панели
     var panelW = 52 * sc, panelH = 14 * sc;
     if (station.id === 'mir') {
-      // 4 панели: 2 слева, 2 справа (друг над другом)
       drawSolarPanel(cx - r - panelW - 6, cy - panelH - 2, panelW, panelH);
       drawSolarPanel(cx - r - panelW - 6, cy + 2, panelW, panelH);
       drawSolarPanel(cx + r + 6, cy - panelH - 2, panelW, panelH);
@@ -459,7 +453,6 @@
       drawSolarPanel(cx + r + 6, cy - panelH / 2, panelW, panelH);
     }
 
-    // тяги к панелям
     ctx.strokeStyle = '#7d8a9c';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -467,7 +460,6 @@
     ctx.moveTo(cx + r, cy); ctx.lineTo(cx + r + 6, cy);
     ctx.stroke();
 
-    // корпус
     var bodyW = r * 2.2;
     var bodyH = r * 1.4;
     var grad = ctx.createLinearGradient(cx - bodyW/2, cy - bodyH/2, cx + bodyW/2, cy + bodyH/2);
@@ -481,11 +473,9 @@
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // блик
     ctx.fillStyle = 'rgba(255,255,255,0.45)';
     ctx.fillRect(cx - bodyW/2 + 6, cy - bodyH/2 + 3, bodyW - 12, 2);
 
-    // иллюминаторы
     ctx.fillStyle = station.id === 'soyuz' ? '#baf5cd' : 'rgba(120,200,255,0.9)';
     ctx.beginPath();
     ctx.arc(cx - 8, cy, 3, 0, Math.PI * 2);
@@ -493,7 +483,6 @@
     ctx.arc(cx + 8, cy, 3, 0, Math.PI * 2);
     ctx.fill();
 
-    // стыковочный узел
     ctx.fillStyle = '#fff3d6';
     ctx.beginPath();
     ctx.arc(cx + bodyW/2 + 5, cy, 5, 0, Math.PI * 2);
@@ -502,7 +491,6 @@
     ctx.lineWidth = 1.2;
     ctx.stroke();
 
-    // верхний купол
     ctx.fillStyle = station.accentColor;
     ctx.beginPath();
     ctx.arc(cx, cy - bodyH/2 - 6, 6, 0, Math.PI * 2);
@@ -510,7 +498,6 @@
     ctx.strokeStyle = 'rgba(255,255,255,0.4)';
     ctx.stroke();
 
-    // антенна
     ctx.strokeStyle = '#9aa7b8';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -522,7 +509,6 @@
     ctx.ellipse(cx, cy - bodyH/2 - 24, 7, 4, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // подпись
     ctx.fillStyle = hexToRgba(station.color, 0.95);
     ctx.font = '11px system-ui, sans-serif';
     ctx.textAlign = 'center';
@@ -642,6 +628,7 @@
     var b = parseInt(h.substr(4,2),16);
     return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
   }
+  
   function lighten(hex, k) {
     var h = hex.replace('#','');
     if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
@@ -654,7 +641,6 @@
     return 'rgb(' + r + ',' + g + ',' + b + ')';
   }
 
-  // ----- Стрелка-указатель на станцию -----
   function drawStationPointer() {
     var w = canvas.clientWidth, h = canvas.clientHeight;
     var st = toScreen(0, 0);
@@ -682,7 +668,6 @@
     ctx.restore();
   }
 
-  // ---------- Общая отрисовка ----------
   var tAnimation = 0;
 
   function draw() {
@@ -702,7 +687,6 @@
     var inDock = dist <= mission.dockR;
     var okSpeed = speed <= mission.maxSpeed;
 
-    // Призрачные прошлые траектории
     for (var g = 0; g < state.ghostTrails.length; g++) {
       var gt = state.ghostTrails[g];
       if (gt.length < 2) continue;
@@ -717,7 +701,6 @@
       ctx.stroke();
     }
 
-    // Коридор — конус от станции
     ctx.save();
     ctx.translate(st.x, st.y);
     ctx.beginPath();
@@ -731,7 +714,6 @@
     ctx.stroke();
     ctx.restore();
 
-    // Радиус стыковки
     var dockStroke = 'rgba(76, 217, 100, 0.5)';
     var dockFill = null;
     if (inDock && okSpeed) {
@@ -755,7 +737,6 @@
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // След
     if (state.trail.length > 1) {
       ctx.beginPath();
       for (var k = 0; k < state.trail.length; k++) {
@@ -788,7 +769,6 @@
 
   function loop() {
     if (!state.running) {
-      // Плавная анимация звёзд и после окончания
       draw();
       requestAnimationFrame(loop);
       return;
