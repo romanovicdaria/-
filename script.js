@@ -46,6 +46,36 @@
     { id: 'soyuz', name: 'Модуль «Союз»', scale: 0.7, color: '#a3e2b3', accentColor: '#2e7d4f' }
   ];
 
+  // ============================================================
+  //  КОРАБЛИ (НОВОЕ)
+  // ============================================================
+  var SHIPS = [
+    { 
+      id: 'soyuz', 
+      name: '«Союз»', 
+      color: '#a3e2b3', 
+      accentColor: '#2e7d4f',
+      turnSpeed: 0.06, // скорость поворота
+      fuelCost: 1.0    // множитель расхода топлива
+    },
+    { 
+      id: 'dragon', 
+      name: 'Crew Dragon', 
+      color: '#ffffff', 
+      accentColor: '#555555',
+      turnSpeed: 0.09, // быстрее поворачивает
+      fuelCost: 1.3    // больше тратит
+    },
+    { 
+      id: 'orion', 
+      name: '«Орион»', 
+      color: '#d4af37', 
+      accentColor: '#8b6508',
+      turnSpeed: 0.04, // медленный
+      fuelCost: 0.8    // экономичный
+    }
+  ];
+
   // ---------- Константы ----------
   var SCALE = 1.6;
   var STATION_R = 18;
@@ -81,6 +111,7 @@
   // ---------- Текущие выборы ----------
   var mission = MISSIONS[0];
   var station = STATIONS[0];
+  var ship = SHIPS[0];
 
   // ---------- Состояние ----------
   var state = {
@@ -90,8 +121,9 @@
     step: 0,
     ship: { x: 0, y: 0, vx: 0, vy: 0 },
     stationPos: { x: 0, y: 0 },
+    stationVel: { x: 0, y: 0 },
     stationAngle: 0,
-    shipAngle: 0, // куда смотрит нос
+    shipAngle: 0,
     totalDv: 0,
     fuel: 30,
     burnTimer: 0,
@@ -139,7 +171,9 @@
     state.totalDv = 0;
     state.cam.x = 0;
     state.cam.y = 0;
+    
     state.stationPos = { x: 0, y: 0 };
+    state.stationVel = { x: 0, y: -1.5 };
     state.stationAngle = 0;
 
     if (state.ship.x !== 0 || state.ship.y !== 0) {
@@ -159,7 +193,6 @@
     state.ship.vx = mission.start.vx;
     state.ship.vy = mission.start.vy;
     
-    // Начальный угол носа по направлению движения
     state.shipAngle = Math.atan2(state.ship.vy, state.ship.vx);
     if (state.ship.vx === 0 && state.ship.vy === 0) state.shipAngle = 0;
 
@@ -188,7 +221,8 @@
       state.ship.vx += dv0 * Math.cos(rad);
       state.ship.vy += dv0 * Math.sin(rad);
       state.totalDv += dv0;
-      state.fuel -= dv0;
+      state.fuel -= dv0 * ship.fuelCost; // учитываем расход
+      if (state.fuel < 0) state.fuel = 0;
       state.burnTimer = 0.4;
       updateFuel();
     }
@@ -212,13 +246,13 @@
     if (dv > state.fuel) dv = state.fuel;
     if (dv <= 0) return;
 
-    // Угол импульса теперь отсчитывается от текущего направления НОСА корабля
     var rad = state.shipAngle + ang * Math.PI / 180;
 
     state.ship.vx += dv * Math.cos(rad);
     state.ship.vy += dv * Math.sin(rad);
     state.totalDv += dv;
-    state.fuel -= dv;
+    state.fuel -= dv * ship.fuelCost; // учитываем расход
+    if (state.fuel < 0) state.fuel = 0;
     state.burnTimer = 0.4;
     updateFuel();
     updateHud();
@@ -229,12 +263,12 @@
   function stepPhysics() {
     if (state.finished) return;
 
-    // 1. Движение станции
-    state.stationAngle += 0.01; // медленное вращение
-    state.stationPos.x = Math.sin(state.t * 0.1) * 15; // дрейф по V-bar
-    state.stationPos.y = Math.cos(state.t * 0.15) * 10; // дрейф по R-bar
+    state.stationAngle += 0.01;
+    state.stationPos.x += state.stationVel.x * DT;
+    state.stationPos.y += state.stationVel.y * DT;
+    if (state.stationPos.y < -150) state.stationVel.y = 1.5;
+    if (state.stationPos.y > 150) state.stationVel.y = -1.5;
 
-    // 2. Движение корабля (HCW)
     var n = N;
     var vxHCW = -state.ship.vy;
     var axHCW = 3 * n * n * (-state.ship.y) + 2 * n * vxHCW;
@@ -263,7 +297,6 @@
   }
 
   function updateCamera() {
-    // Камера центрируется на станции, которая теперь движется
     var tx = (state.ship.x + state.stationPos.x) * 0.5;
     var ty = (state.ship.y + state.stationPos.y) * 0.5;
     var maxCam = 260;
@@ -407,15 +440,9 @@
     for (var y = startY; y < h; y += stepPx) {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
     }
-
-    ctx.strokeStyle = 'rgba(160,210,255,0.28)';
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.moveTo(0, origin.y); ctx.lineTo(w, origin.y);
-    ctx.moveTo(origin.x, 0); ctx.lineTo(origin.x, h);
-    ctx.stroke();
   }
 
+  // ----- Станции -----
   function drawStation(cx, cy, angle) {
     var sc = station.scale;
     var r = STATION_R * SCALE * 0.5 * sc;
@@ -529,10 +556,11 @@
     ctx.stroke();
   }
 
+  // ----- Корабли (разная графика) -----
   function drawShip(px, py, angle, burning) {
     var glow = ctx.createRadialGradient(px, py, 2, px, py, 18);
-    glow.addColorStop(0, 'rgba(77,166,255,0.45)');
-    glow.addColorStop(1, 'rgba(77,166,255,0)');
+    glow.addColorStop(0, hexToRgba(ship.color, 0.45));
+    glow.addColorStop(1, hexToRgba(ship.color, 0));
     ctx.beginPath();
     ctx.arc(px, py, 18, 0, Math.PI * 2);
     ctx.fillStyle = glow;
@@ -563,32 +591,52 @@
     ctx.closePath();
     ctx.fill();
 
-    var g = ctx.createLinearGradient(0, -8, 0, 8);
-    g.addColorStop(0, '#cfe6ff');
-    g.addColorStop(0.5, '#5fb0ff');
-    g.addColorStop(1, '#1f5c9c');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.moveTo(16, 0); ctx.lineTo(6, -8); ctx.lineTo(-8, -7); ctx.lineTo(-8, 7); ctx.lineTo(6, 8);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    // Разная форма в зависимости от корабля
+    if (ship.id === 'dragon') {
+      // Дракон (более вытянутый)
+      var g = ctx.createLinearGradient(0, -8, 0, 8);
+      g.addColorStop(0, '#ffffff');
+      g.addColorStop(1, '#aaaaaa');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(18, 0); ctx.lineTo(4, -6); ctx.lineTo(-10, -6); ctx.lineTo(-10, 6); ctx.lineTo(4, 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#333';
+    } else if (ship.id === 'orion') {
+      // Орион (более широкий)
+      var g = ctx.createLinearGradient(0, -10, 0, 10);
+      g.addColorStop(0, '#fceeb5');
+      g.addColorStop(1, '#8b6508');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(14, 0); ctx.lineTo(8, -9); ctx.lineTo(-8, -8); ctx.lineTo(-8, 8); ctx.lineTo(8, 9);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#8b6508';
+    } else {
+      // Союз (стандартный)
+      var g = ctx.createLinearGradient(0, -8, 0, 8);
+      g.addColorStop(0, '#cfe6ff');
+      g.addColorStop(0.5, ship.color);
+      g.addColorStop(1, '#1f5c9c');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(16, 0); ctx.lineTo(6, -8); ctx.lineTo(-8, -7); ctx.lineTo(-8, 7); ctx.lineTo(6, 8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    }
+
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    var cg = ctx.createRadialGradient(6, -2, 1, 6, -2, 5);
-    cg.addColorStop(0, 'rgba(220,245,255,1)');
-    cg.addColorStop(1, 'rgba(90,170,220,0.8)');
-    ctx.fillStyle = cg;
+    // Кабина
+    ctx.fillStyle = 'rgba(220,245,255,0.9)';
     ctx.beginPath();
-    ctx.arc(6, -2, 3.2, 0, Math.PI * 2);
+    ctx.arc(6, -2, 3, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-    ctx.lineWidth = 0.8;
-    ctx.stroke();
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-    ctx.beginPath(); ctx.moveTo(-8, 0); ctx.lineTo(14, 0); ctx.stroke();
     ctx.restore();
   }
 
@@ -649,7 +697,6 @@
     var inDock = dist <= mission.dockR;
     var okSpeed = speed <= mission.maxSpeed;
 
-    // Призрачные следы
     for (var g = 0; g < state.ghostTrails.length; g++) {
       var gt = state.ghostTrails[g];
       if (gt.length < 2) continue;
@@ -678,7 +725,6 @@
     ctx.stroke();
     ctx.restore();
 
-    // Радиус стыковки
     var dockStroke = 'rgba(76, 217, 100, 0.5)';
     var dockFill = null;
     if (inDock && okSpeed) {
@@ -702,7 +748,6 @@
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // След корабля
     if (state.trail.length > 1) {
       ctx.beginPath();
       for (var k = 0; k < state.trail.length; k++) {
@@ -720,7 +765,6 @@
     var sp = toScreen(state.ship.x, state.ship.y);
     drawShip(sp.x, sp.y, state.shipAngle, state.burnTimer > 0);
 
-    // Вектор скорости
     if (speed > 0.5) {
       var kk = 0.6;
       ctx.beginPath();
@@ -734,11 +778,13 @@
 
   function loop() {
     if (!state.running) {
-      // Чтобы станция вращалась даже до запуска
       state.t += 0.016; 
       state.stationAngle += 0.01;
-      state.stationPos.x = Math.sin(state.t * 0.1) * 15;
-      state.stationPos.y = Math.cos(state.t * 0.15) * 10;
+      state.stationPos.x += state.stationVel.x * 0.016;
+      state.stationPos.y += state.stationVel.y * 0.016;
+      if (state.stationPos.y < -150) state.stationVel.y = 1.5;
+      if (state.stationPos.y > 150) state.stationVel.y = -1.5;
+      
       updateHud();
       draw();
       requestAnimationFrame(loop);
@@ -764,13 +810,12 @@
     syncOutputs();
   }
 
-  // Поворот носа корабля
   function turnShip(delta) {
     if (!state.running) return;
-    state.shipAngle += delta;
+    state.shipAngle += delta * ship.turnSpeed;
     if (state.shipAngle > Math.PI) state.shipAngle -= Math.PI * 2;
     if (state.shipAngle < -Math.PI) state.shipAngle += Math.PI * 2;
-    draw(); // сразу перерисовать
+    draw();
   }
 
   function holdButton(id, fn) {
@@ -786,7 +831,7 @@
     el.addEventListener('touchcancel', stop);
   }
 
-  // ---------- Выбор миссий / станций ----------
+  // ---------- Меню выборов ----------
   function renderChips() {
     var mc = document.getElementById('mission-chips');
     mc.innerHTML = '';
@@ -818,6 +863,20 @@
       });
       sc.appendChild(b);
     });
+
+    var shc = document.getElementById('ship-chips');
+    shc.innerHTML = '';
+    SHIPS.forEach(function (s) {
+      var b = document.createElement('button');
+      b.className = 'chip' + (s.id === ship.id ? ' active' : '');
+      b.textContent = s.name;
+      b.addEventListener('click', function () {
+        ship = s;
+        renderChips();
+        draw();
+      });
+      shc.appendChild(b);
+    });
   }
 
   // ---------- Обработчики ----------
@@ -831,7 +890,6 @@
     resetRound(true);
   });
 
-  // Кнопки управления траекторией (поворот носа)
   holdButton('btn-turn-left', function () { turnShip(0.05); });
   holdButton('btn-turn-right', function () { turnShip(-0.05); });
 
