@@ -47,7 +47,7 @@
   ];
 
   // ============================================================
-  //  КОРАБЛИ (НОВОЕ)
+  //  КОРАБЛИ
   // ============================================================
   var SHIPS = [
     { 
@@ -55,24 +55,24 @@
       name: '«Союз»', 
       color: '#a3e2b3', 
       accentColor: '#2e7d4f',
-      turnSpeed: 0.06, // скорость поворота
-      fuelCost: 1.0    // множитель расхода топлива
+      turnSpeed: 0.06,
+      fuelCost: 1.0
     },
     { 
       id: 'dragon', 
       name: 'Crew Dragon', 
       color: '#ffffff', 
       accentColor: '#555555',
-      turnSpeed: 0.09, // быстрее поворачивает
-      fuelCost: 1.3    // больше тратит
+      turnSpeed: 0.09,
+      fuelCost: 1.3
     },
     { 
       id: 'orion', 
       name: '«Орион»', 
       color: '#d4af37', 
       accentColor: '#8b6508',
-      turnSpeed: 0.04, // медленный
-      fuelCost: 0.8    // экономичный
+      turnSpeed: 0.04,
+      fuelCost: 0.8
     }
   ];
 
@@ -80,7 +80,6 @@
   var SCALE = 1.6;
   var STATION_R = 18;
   var DT = 0.05;
-  var N = 0.09;
 
   // ---------- DOM ----------
   var canvas = document.getElementById('scene');
@@ -117,6 +116,7 @@
   var state = {
     running: false,
     finished: false,
+    docked: false, // Флаг успешной стыковки
     t: 0,
     step: 0,
     ship: { x: 0, y: 0, vx: 0, vy: 0 },
@@ -164,6 +164,7 @@
   function resetRound(resetSliders) {
     state.running = false;
     state.finished = false;
+    state.docked = false;
     state.t = 0;
     state.step = 0;
     state.trail = [];
@@ -221,7 +222,7 @@
       state.ship.vx += dv0 * Math.cos(rad);
       state.ship.vy += dv0 * Math.sin(rad);
       state.totalDv += dv0;
-      state.fuel -= dv0 * ship.fuelCost; // учитываем расход
+      state.fuel -= dv0 * ship.fuelCost;
       if (state.fuel < 0) state.fuel = 0;
       state.burnTimer = 0.4;
       updateFuel();
@@ -239,7 +240,7 @@
 
   // ---------- Импульс в полёте ----------
   function burnNow() {
-    if (!state.running || state.finished) return;
+    if (!state.running || state.finished || state.docked) return;
     var dv = parseFloat(sDv.value);
     var ang = parseFloat(sAng.value);
     if (dv <= 0) return;
@@ -251,7 +252,7 @@
     state.ship.vx += dv * Math.cos(rad);
     state.ship.vy += dv * Math.sin(rad);
     state.totalDv += dv;
-    state.fuel -= dv * ship.fuelCost; // учитываем расход
+    state.fuel -= dv * ship.fuelCost;
     if (state.fuel < 0) state.fuel = 0;
     state.burnTimer = 0.4;
     updateFuel();
@@ -259,27 +260,35 @@
     showToast('Импульс +' + dv.toFixed(1));
   }
 
-  // ---------- Физика HCW ----------
+  // ---------- Физика (Инерциальная, упрощённая) ----------
   function stepPhysics() {
     if (state.finished) return;
 
+    // Если состыковались — движемся вместе со станцией
+    if (state.docked) {
+      state.t += DT;
+      state.stationAngle += 0.01;
+      state.stationPos.x += state.stationVel.x * DT;
+      state.stationPos.y += state.stationVel.y * DT;
+      
+      state.ship.x = state.stationPos.x;
+      state.ship.y = state.stationPos.y;
+      state.ship.vx = state.stationVel.x;
+      state.ship.vy = state.stationVel.y;
+      
+      updateCamera();
+      updateHud();
+      return;
+    }
+
+    // 1. Движение станции
     state.stationAngle += 0.01;
     state.stationPos.x += state.stationVel.x * DT;
     state.stationPos.y += state.stationVel.y * DT;
     if (state.stationPos.y < -150) state.stationVel.y = 1.5;
     if (state.stationPos.y > 150) state.stationVel.y = -1.5;
 
-    var n = N;
-    var vxHCW = -state.ship.vy;
-    var axHCW = 3 * n * n * (-state.ship.y) + 2 * n * vxHCW;
-    var ayHCW = -2 * n * state.ship.vx;
-
-    var axScreen = ayHCW;
-    var ayScreen = -axHCW;
-
-    state.ship.vx += axScreen * DT;
-    state.ship.vy += ayScreen * DT;
-
+    // 2. Движение корабля (Только по инерции)
     state.ship.x += state.ship.vx * DT;
     state.ship.y += state.ship.vy * DT;
     state.t += DT;
@@ -309,13 +318,24 @@
   }
 
   function checkResult() {
+    if (state.docked) return; // Уже состыковались
+
     var dx = state.ship.x - state.stationPos.x;
     var dy = state.ship.y - state.stationPos.y;
     var dist = Math.sqrt(dx * dx + dy * dy);
     var speed = Math.sqrt(state.ship.vx * state.ship.vx + state.ship.vy * state.ship.vy);
 
+    // Успешная стыковка
     if (dist <= mission.dockR && speed <= mission.maxSpeed) {
-      finish(true, 'Успешная стыковка! Миссия «' + mission.name + '» выполнена.');
+      state.docked = true;
+      hudStatus.textContent = 'состыковано';
+      hudStatus.style.color = '#4cd964';
+      msgEl.className = 'msg show ok';
+      msgEl.textContent = 'Успешная стыковка! Корабль пристыкован к станции.';
+      btnBurn.disabled = true;
+      
+      // Выравниваем угол корабля под станцию
+      state.shipAngle = state.stationAngle;
       return;
     }
     if (Math.abs(state.ship.x) > 1200 || Math.abs(state.ship.y) > 900) {
@@ -556,7 +576,7 @@
     ctx.stroke();
   }
 
-  // ----- Корабли (разная графика) -----
+  // ----- Корабли -----
   function drawShip(px, py, angle, burning) {
     var glow = ctx.createRadialGradient(px, py, 2, px, py, 18);
     glow.addColorStop(0, hexToRgba(ship.color, 0.45));
@@ -591,9 +611,7 @@
     ctx.closePath();
     ctx.fill();
 
-    // Разная форма в зависимости от корабля
     if (ship.id === 'dragon') {
-      // Дракон (более вытянутый)
       var g = ctx.createLinearGradient(0, -8, 0, 8);
       g.addColorStop(0, '#ffffff');
       g.addColorStop(1, '#aaaaaa');
@@ -604,7 +622,6 @@
       ctx.fill();
       ctx.strokeStyle = '#333';
     } else if (ship.id === 'orion') {
-      // Орион (более широкий)
       var g = ctx.createLinearGradient(0, -10, 0, 10);
       g.addColorStop(0, '#fceeb5');
       g.addColorStop(1, '#8b6508');
@@ -615,7 +632,6 @@
       ctx.fill();
       ctx.strokeStyle = '#8b6508';
     } else {
-      // Союз (стандартный)
       var g = ctx.createLinearGradient(0, -8, 0, 8);
       g.addColorStop(0, '#cfe6ff');
       g.addColorStop(0.5, ship.color);
@@ -631,7 +647,6 @@
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // Кабина
     ctx.fillStyle = 'rgba(220,245,255,0.9)';
     ctx.beginPath();
     ctx.arc(6, -2, 3, 0, Math.PI * 2);
@@ -712,22 +727,24 @@
     }
 
     // Коридор
-    ctx.save();
-    ctx.translate(st.x, st.y);
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.arc(0, 0, mission.dockR * SCALE * 6, Math.PI * 0.7, Math.PI * 1.3);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(76, 217, 100, 0.05)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(76, 217, 100, 0.2)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.restore();
+    if (!state.docked) {
+      ctx.save();
+      ctx.translate(st.x, st.y);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, mission.dockR * SCALE * 6, Math.PI * 0.7, Math.PI * 1.3);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(76, 217, 100, 0.05)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(76, 217, 100, 0.2)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.restore();
+    }
 
     var dockStroke = 'rgba(76, 217, 100, 0.5)';
     var dockFill = null;
-    if (inDock && okSpeed) {
+    if (inDock && okSpeed && !state.docked) {
       dockStroke = 'rgba(76, 217, 100, 0.95)';
       dockFill = 'rgba(76, 217, 100, 0.15)';
     } else if (inDock && !okSpeed) {
@@ -742,7 +759,7 @@
     }
     ctx.beginPath();
     ctx.arc(st.x, st.y, mission.dockR * SCALE, 0, Math.PI * 2);
-    ctx.strokeStyle = dockStroke;
+    ctx.strokeStyle = state.docked ? 'rgba(76, 217, 100, 0.95)' : dockStroke;
     ctx.setLineDash([5, 5]);
     ctx.lineWidth = 1.5;
     ctx.stroke();
@@ -765,7 +782,7 @@
     var sp = toScreen(state.ship.x, state.ship.y);
     drawShip(sp.x, sp.y, state.shipAngle, state.burnTimer > 0);
 
-    if (speed > 0.5) {
+    if (speed > 0.5 && !state.docked) {
       var kk = 0.6;
       ctx.beginPath();
       ctx.moveTo(sp.x, sp.y);
@@ -784,6 +801,11 @@
       state.stationPos.y += state.stationVel.y * 0.016;
       if (state.stationPos.y < -150) state.stationVel.y = 1.5;
       if (state.stationPos.y > 150) state.stationVel.y = -1.5;
+      
+      if (state.docked) {
+        state.ship.x = state.stationPos.x;
+        state.ship.y = state.stationPos.y;
+      }
       
       updateHud();
       draw();
@@ -811,7 +833,7 @@
   }
 
   function turnShip(delta) {
-    if (!state.running) return;
+    if (!state.running || state.docked) return;
     state.shipAngle += delta * ship.turnSpeed;
     if (state.shipAngle > Math.PI) state.shipAngle -= Math.PI * 2;
     if (state.shipAngle < -Math.PI) state.shipAngle += Math.PI * 2;
