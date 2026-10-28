@@ -10,7 +10,7 @@
   <div id="app">
     <header>
       <h1>Стыковка с орбитальной станцией</h1>
-      <p class="disclaimer">Учебная модель (HCW). Траектория упрощена.</p>
+      <p class="disclaimer">Учебная модель. Траектория упрощена.</p>
     </header>
 
     <div class="mission-bar">
@@ -67,26 +67,30 @@
     <div id="msg" class="msg"></div>
 
     <div class="panel">
-      <h2>Ручное управление (Тяга)</h2>
+      <h2>Поворот корабля</h2>
       <div class="buttons" style="margin-top: 0;">
-        <button id="btn-turn-left">↺ Повернуть влево</button>
-        <button id="btn-turn-right">↻ Повернуть вправо</button>
+        <button id="btn-turn-left">↺ Влево</button>
+        <button id="btn-turn-right">↻ Вправо</button>
       </div>
       <p class="hint-small" style="text-align:center; margin-top:8px;">
-        Поворачивает нос корабля для корректировки траектории импульсом.
+        Поворачивает нос для корректировки.
       </p>
     </div>
 
     <div class="panel selectors">
       <h2>Выбор миссии</h2>
       <div class="chips" id="mission-chips"></div>
-      <h2 style="margin-top:8px;">Выбор станции</h2>
+      
+      <h2 style="margin-top:12px;">Выбор станции</h2>
       <div class="chips" id="station-chips"></div>
+
+      <h2 style="margin-top:12px;">Выбор корабля</h2>
+      <div class="chips" id="ship-chips"></div>
     </div>
 
     <p class="hint">
-      Компьютер: ← → меняют угол импульса, ↑ ↓ меняют ΔV, пробел — запуск,
-      B — импульс в полёте, R — заново.
+      Компьютер: ← → меняют угол, ↑ ↓ меняют ΔV, пробел — запуск,
+      B — импульс, A/D — поворот носа, R — заново.
     </p>
   </div>
 
