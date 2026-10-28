@@ -66,6 +66,17 @@
 
     <div id="msg" class="msg"></div>
 
+    <div class="panel">
+      <h2>Ручное управление (Тяга)</h2>
+      <div class="buttons" style="margin-top: 0;">
+        <button id="btn-turn-left">↺ Повернуть влево</button>
+        <button id="btn-turn-right">↻ Повернуть вправо</button>
+      </div>
+      <p class="hint-small" style="text-align:center; margin-top:8px;">
+        Поворачивает нос корабля для корректировки траектории импульсом.
+      </p>
+    </div>
+
     <div class="panel selectors">
       <h2>Выбор миссии</h2>
       <div class="chips" id="mission-chips"></div>
@@ -73,17 +84,8 @@
       <div class="chips" id="station-chips"></div>
     </div>
 
-    <div class="buttons mobile-nudge">
-      <button id="btn-left">← Угол</button>
-      <button id="btn-right">Угол →</button>
-    </div>
-    <div class="buttons mobile-nudge">
-      <button id="btn-down">ΔV −</button>
-      <button id="btn-up">ΔV +</button>
-    </div>
-
     <p class="hint">
-      Компьютер: ← → меняют угол, ↑ ↓ меняют ΔV, пробел — запуск,
+      Компьютер: ← → меняют угол импульса, ↑ ↓ меняют ΔV, пробел — запуск,
       B — импульс в полёте, R — заново.
     </p>
   </div>
