@@ -41,30 +41,9 @@
   //  СТАНЦИИ
   // ============================================================
   var STATIONS = [
-    {
-      id: 'iss',
-      name: 'МКС-стиль',
-      scale: 1.0,
-      panels: 2,
-      color: '#ffb84d',
-      accentColor: '#c8842a'
-    },
-    {
-      id: 'mir',
-      name: '«Мир»',
-      scale: 0.85,
-      panels: 4,
-      color: '#d6e6ff',
-      accentColor: '#7d8a9c'
-    },
-    {
-      id: 'soyuz',
-      name: 'Модуль «Союз»',
-      scale: 0.7,
-      panels: 2,
-      color: '#a3e2b3',
-      accentColor: '#2e7d4f'
-    }
+    { id: 'iss', name: 'МКС-стиль', scale: 1.0, color: '#ffb84d', accentColor: '#c8842a' },
+    { id: 'mir', name: '«Мир»', scale: 0.85, color: '#d6e6ff', accentColor: '#7d8a9c' },
+    { id: 'soyuz', name: 'Модуль «Союз»', scale: 0.7, color: '#a3e2b3', accentColor: '#2e7d4f' }
   ];
 
   // ---------- Константы ----------
@@ -110,6 +89,9 @@
     t: 0,
     step: 0,
     ship: { x: 0, y: 0, vx: 0, vy: 0 },
+    stationPos: { x: 0, y: 0 },
+    stationAngle: 0,
+    shipAngle: 0, // куда смотрит нос
     totalDv: 0,
     fuel: 30,
     burnTimer: 0,
@@ -157,6 +139,8 @@
     state.totalDv = 0;
     state.cam.x = 0;
     state.cam.y = 0;
+    state.stationPos = { x: 0, y: 0 };
+    state.stationAngle = 0;
 
     if (state.ship.x !== 0 || state.ship.y !== 0) {
       state.ghostTrails.push(state.trail.slice());
@@ -174,6 +158,10 @@
     state.ship.y = mission.start.y;
     state.ship.vx = mission.start.vx;
     state.ship.vy = mission.start.vy;
+    
+    // Начальный угол носа по направлению движения
+    state.shipAngle = Math.atan2(state.ship.vy, state.ship.vx);
+    if (state.ship.vx === 0 && state.ship.vy === 0) state.shipAngle = 0;
 
     msgEl.className = 'msg';
     msgEl.textContent = '';
@@ -194,8 +182,9 @@
     var dv0 = parseFloat(sDv.value);
     var ang0 = parseFloat(sAng.value);
     if (dv0 > state.fuel) dv0 = state.fuel;
+    
     if (dv0 > 0) {
-      var rad = ang0 * Math.PI / 180;
+      var rad = state.shipAngle + ang0 * Math.PI / 180;
       state.ship.vx += dv0 * Math.cos(rad);
       state.ship.vy += dv0 * Math.sin(rad);
       state.totalDv += dv0;
@@ -223,9 +212,8 @@
     if (dv > state.fuel) dv = state.fuel;
     if (dv <= 0) return;
 
-    var shipAngle = Math.atan2(state.ship.vy, state.ship.vx);
-    if (state.ship.vx === 0 && state.ship.vy === 0) shipAngle = 0;
-    var rad = shipAngle + ang * Math.PI / 180;
+    // Угол импульса теперь отсчитывается от текущего направления НОСА корабля
+    var rad = state.shipAngle + ang * Math.PI / 180;
 
     state.ship.vx += dv * Math.cos(rad);
     state.ship.vy += dv * Math.sin(rad);
@@ -241,6 +229,12 @@
   function stepPhysics() {
     if (state.finished) return;
 
+    // 1. Движение станции
+    state.stationAngle += 0.01; // медленное вращение
+    state.stationPos.x = Math.sin(state.t * 0.1) * 15; // дрейф по V-bar
+    state.stationPos.y = Math.cos(state.t * 0.15) * 10; // дрейф по R-bar
+
+    // 2. Движение корабля (HCW)
     var n = N;
     var vxHCW = -state.ship.vy;
     var axHCW = 3 * n * n * (-state.ship.y) + 2 * n * vxHCW;
@@ -269,8 +263,9 @@
   }
 
   function updateCamera() {
-    var tx = state.ship.x * 0.55;
-    var ty = state.ship.y * 0.55;
+    // Камера центрируется на станции, которая теперь движется
+    var tx = (state.ship.x + state.stationPos.x) * 0.5;
+    var ty = (state.ship.y + state.stationPos.y) * 0.5;
     var maxCam = 260;
     if (tx > maxCam) tx = maxCam;
     if (tx < -maxCam) tx = -maxCam;
@@ -281,14 +276,13 @@
   }
 
   function checkResult() {
-    var dx = state.ship.x;
-    var dy = state.ship.y;
+    var dx = state.ship.x - state.stationPos.x;
+    var dy = state.ship.y - state.stationPos.y;
     var dist = Math.sqrt(dx * dx + dy * dy);
     var speed = Math.sqrt(state.ship.vx * state.ship.vx + state.ship.vy * state.ship.vy);
 
     if (dist <= mission.dockR && speed <= mission.maxSpeed) {
-      finish(true, 'Успешная стыковка! Миссия «' + mission.name + '» выполнена. ' +
-        'Расстояние ' + dist.toFixed(1) + ', скорость ' + speed.toFixed(1) + '.');
+      finish(true, 'Успешная стыковка! Миссия «' + mission.name + '» выполнена.');
       return;
     }
     if (Math.abs(state.ship.x) > 1200 || Math.abs(state.ship.y) > 900) {
@@ -300,7 +294,7 @@
       return;
     }
     if (state.step >= mission.timeLimit) {
-      finish(false, 'Время вышло. Расстояние ' + dist.toFixed(1) + '.');
+      finish(false, 'Время вышло.');
       return;
     }
   }
@@ -319,8 +313,8 @@
 
   // ---------- HUD ----------
   function updateHud() {
-    var dx = state.ship.x;
-    var dy = state.ship.y;
+    var dx = state.ship.x - state.stationPos.x;
+    var dy = state.ship.y - state.stationPos.y;
     var dist = Math.sqrt(dx * dx + dy * dy);
     var speed = Math.sqrt(state.ship.vx * state.ship.vx + state.ship.vy * state.ship.vy);
 
@@ -345,7 +339,6 @@
     fuelFill.style.width = (pct * 100).toFixed(1) + '%';
   }
 
-  // ---------- Уведомления ----------
   var toastTimer = null;
   function showToast(text) {
     toastEl.textContent = text;
@@ -421,71 +414,68 @@
     ctx.moveTo(0, origin.y); ctx.lineTo(w, origin.y);
     ctx.moveTo(origin.x, 0); ctx.lineTo(origin.x, h);
     ctx.stroke();
-
-    ctx.fillStyle = 'rgba(160,210,255,0.55)';
-    ctx.font = '10px system-ui, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText('V-bar', 8, origin.y - 6);
-    ctx.fillText('R-bar', origin.x + 6, 14);
   }
 
-  // ----- Станции -----
-  function drawStation(cx, cy) {
+  function drawStation(cx, cy, angle) {
     var sc = station.scale;
     var r = STATION_R * SCALE * 0.5 * sc;
 
-    var glow = ctx.createRadialGradient(cx, cy, r, cx, cy, r * 3.4);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+
+    var glow = ctx.createRadialGradient(0, 0, r, 0, 0, r * 3.4);
     glow.addColorStop(0, hexToRgba(station.color, 0.3));
     glow.addColorStop(1, hexToRgba(station.color, 0));
     ctx.beginPath();
-    ctx.arc(cx, cy, r * 3.4, 0, Math.PI * 2);
+    ctx.arc(0, 0, r * 3.4, 0, Math.PI * 2);
     ctx.fillStyle = glow;
     ctx.fill();
 
     var panelW = 52 * sc, panelH = 14 * sc;
     if (station.id === 'mir') {
-      drawSolarPanel(cx - r - panelW - 6, cy - panelH - 2, panelW, panelH);
-      drawSolarPanel(cx - r - panelW - 6, cy + 2, panelW, panelH);
-      drawSolarPanel(cx + r + 6, cy - panelH - 2, panelW, panelH);
-      drawSolarPanel(cx + r + 6, cy + 2, panelW, panelH);
+      drawSolarPanel(-r - panelW - 6, -panelH - 2, panelW, panelH);
+      drawSolarPanel(-r - panelW - 6, 2, panelW, panelH);
+      drawSolarPanel(r + 6, -panelH - 2, panelW, panelH);
+      drawSolarPanel(r + 6, 2, panelW, panelH);
     } else {
-      drawSolarPanel(cx - r - panelW - 6, cy - panelH / 2, panelW, panelH);
-      drawSolarPanel(cx + r + 6, cy - panelH / 2, panelW, panelH);
+      drawSolarPanel(-r - panelW - 6, -panelH / 2, panelW, panelH);
+      drawSolarPanel(r + 6, -panelH / 2, panelW, panelH);
     }
 
     ctx.strokeStyle = '#7d8a9c';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(cx - r, cy); ctx.lineTo(cx - r - 6, cy);
-    ctx.moveTo(cx + r, cy); ctx.lineTo(cx + r + 6, cy);
+    ctx.moveTo(-r, 0); ctx.lineTo(-r - 6, 0);
+    ctx.moveTo(r, 0); ctx.lineTo(r + 6, 0);
     ctx.stroke();
 
     var bodyW = r * 2.2;
     var bodyH = r * 1.4;
-    var grad = ctx.createLinearGradient(cx - bodyW/2, cy - bodyH/2, cx + bodyW/2, cy + bodyH/2);
+    var grad = ctx.createLinearGradient(-bodyW/2, -bodyH/2, bodyW/2, bodyH/2);
     grad.addColorStop(0, lighten(station.color, 0.4));
     grad.addColorStop(0.45, station.color);
     grad.addColorStop(1, station.accentColor);
     ctx.fillStyle = grad;
-    roundedRect(cx - bodyW/2, cy - bodyH/2, bodyW, bodyH, 6);
+    roundedRect(-bodyW/2, -bodyH/2, bodyW, bodyH, 6);
     ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.35)';
     ctx.lineWidth = 1;
     ctx.stroke();
 
     ctx.fillStyle = 'rgba(255,255,255,0.45)';
-    ctx.fillRect(cx - bodyW/2 + 6, cy - bodyH/2 + 3, bodyW - 12, 2);
+    ctx.fillRect(-bodyW/2 + 6, -bodyH/2 + 3, bodyW - 12, 2);
 
     ctx.fillStyle = station.id === 'soyuz' ? '#baf5cd' : 'rgba(120,200,255,0.9)';
     ctx.beginPath();
-    ctx.arc(cx - 8, cy, 3, 0, Math.PI * 2);
-    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
-    ctx.arc(cx + 8, cy, 3, 0, Math.PI * 2);
+    ctx.arc(-8, 0, 3, 0, Math.PI * 2);
+    ctx.arc(0, 0, 3, 0, Math.PI * 2);
+    ctx.arc(8, 0, 3, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.fillStyle = '#fff3d6';
     ctx.beginPath();
-    ctx.arc(cx + bodyW/2 + 5, cy, 5, 0, Math.PI * 2);
+    ctx.arc(bodyW/2 + 5, 0, 5, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = station.accentColor;
     ctx.lineWidth = 1.2;
@@ -493,7 +483,7 @@
 
     ctx.fillStyle = station.accentColor;
     ctx.beginPath();
-    ctx.arc(cx, cy - bodyH/2 - 6, 6, 0, Math.PI * 2);
+    ctx.arc(0, -bodyH/2 - 6, 6, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.4)';
     ctx.stroke();
@@ -501,18 +491,20 @@
     ctx.strokeStyle = '#9aa7b8';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(cx, cy - bodyH/2 - 12);
-    ctx.lineTo(cx, cy - bodyH/2 - 22);
+    ctx.moveTo(0, -bodyH/2 - 12);
+    ctx.lineTo(0, -bodyH/2 - 22);
     ctx.stroke();
     ctx.fillStyle = '#c9d4e2';
     ctx.beginPath();
-    ctx.ellipse(cx, cy - bodyH/2 - 24, 7, 4, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, -bodyH/2 - 24, 7, 4, 0, 0, Math.PI * 2);
     ctx.fill();
+
+    ctx.restore();
 
     ctx.fillStyle = hexToRgba(station.color, 0.95);
     ctx.font = '11px system-ui, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(station.name.toUpperCase(), cx, cy + bodyH/2 + 24);
+    ctx.fillText(station.name.toUpperCase(), cx, cy + r * 1.8);
   }
 
   function drawSolarPanel(x, y, w, h) {
@@ -537,13 +529,7 @@
     ctx.stroke();
   }
 
-  // ----- Корабль -----
-  function drawShip(px, py, burning) {
-    var angle = 0;
-    if (state.ship.vx !== 0 || state.ship.vy !== 0) {
-      angle = Math.atan2(-state.ship.vy, state.ship.vx);
-    }
-
+  function drawShip(px, py, angle, burning) {
     var glow = ctx.createRadialGradient(px, py, 2, px, py, 18);
     glow.addColorStop(0, 'rgba(77,166,255,0.45)');
     glow.addColorStop(1, 'rgba(77,166,255,0)');
@@ -641,33 +627,6 @@
     return 'rgb(' + r + ',' + g + ',' + b + ')';
   }
 
-  function drawStationPointer() {
-    var w = canvas.clientWidth, h = canvas.clientHeight;
-    var st = toScreen(0, 0);
-    var margin = 24;
-    var visible = st.x > margin && st.x < w - margin && st.y > margin && st.y < h - margin;
-    if (visible) return;
-
-    var cx = w / 2, cy = h / 2;
-    var dx = st.x - cx, dy = st.y - cy;
-    var ang = Math.atan2(dy, dx);
-    var rx = w/2 - margin, ry = h/2 - margin;
-    var t = Math.min(Math.abs(rx / (Math.cos(ang) || 0.001)),
-                     Math.abs(ry / (Math.sin(ang) || 0.001)));
-    var px = cx + Math.cos(ang) * t;
-    var py = cy + Math.sin(ang) * t;
-
-    ctx.save();
-    ctx.translate(px, py);
-    ctx.rotate(ang);
-    ctx.fillStyle = hexToRgba(station.color, 0.9);
-    ctx.beginPath();
-    ctx.moveTo(10, 0); ctx.lineTo(-6, -6); ctx.lineTo(-6, 6);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  }
-
   var tAnimation = 0;
 
   function draw() {
@@ -680,13 +639,17 @@
     drawStars(w, h, tAnimation);
     drawGrid();
 
-    var st = toScreen(0, 0);
+    var st = toScreen(state.stationPos.x, state.stationPos.y);
 
-    var dist = Math.sqrt(state.ship.x * state.ship.x + state.ship.y * state.ship.y);
+    var dx = state.ship.x - state.stationPos.x;
+    var dy = state.ship.y - state.stationPos.y;
+    var dist = Math.sqrt(dx * dx + dy * dy);
     var speed = Math.sqrt(state.ship.vx * state.ship.vx + state.ship.vy * state.ship.vy);
+    
     var inDock = dist <= mission.dockR;
     var okSpeed = speed <= mission.maxSpeed;
 
+    // Призрачные следы
     for (var g = 0; g < state.ghostTrails.length; g++) {
       var gt = state.ghostTrails[g];
       if (gt.length < 2) continue;
@@ -701,6 +664,7 @@
       ctx.stroke();
     }
 
+    // Коридор
     ctx.save();
     ctx.translate(st.x, st.y);
     ctx.beginPath();
@@ -714,6 +678,7 @@
     ctx.stroke();
     ctx.restore();
 
+    // Радиус стыковки
     var dockStroke = 'rgba(76, 217, 100, 0.5)';
     var dockFill = null;
     if (inDock && okSpeed) {
@@ -737,6 +702,7 @@
     ctx.stroke();
     ctx.setLineDash([]);
 
+    // След корабля
     if (state.trail.length > 1) {
       ctx.beginPath();
       for (var k = 0; k < state.trail.length; k++) {
@@ -749,11 +715,12 @@
       ctx.stroke();
     }
 
-    drawStation(st.x, st.y);
+    drawStation(st.x, st.y, state.stationAngle);
 
     var sp = toScreen(state.ship.x, state.ship.y);
-    drawShip(sp.x, sp.y, state.burnTimer > 0);
+    drawShip(sp.x, sp.y, state.shipAngle, state.burnTimer > 0);
 
+    // Вектор скорости
     if (speed > 0.5) {
       var kk = 0.6;
       ctx.beginPath();
@@ -763,12 +730,16 @@
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
-
-    drawStationPointer();
   }
 
   function loop() {
     if (!state.running) {
+      // Чтобы станция вращалась даже до запуска
+      state.t += 0.016; 
+      state.stationAngle += 0.01;
+      state.stationPos.x = Math.sin(state.t * 0.1) * 15;
+      state.stationPos.y = Math.cos(state.t * 0.15) * 10;
+      updateHud();
       draw();
       requestAnimationFrame(loop);
       return;
@@ -791,6 +762,15 @@
     while (ang < -180) ang += 360;
     sAng.value = ang;
     syncOutputs();
+  }
+
+  // Поворот носа корабля
+  function turnShip(delta) {
+    if (!state.running) return;
+    state.shipAngle += delta;
+    if (state.shipAngle > Math.PI) state.shipAngle -= Math.PI * 2;
+    if (state.shipAngle < -Math.PI) state.shipAngle += Math.PI * 2;
+    draw(); // сразу перерисовать
   }
 
   function holdButton(id, fn) {
@@ -851,10 +831,9 @@
     resetRound(true);
   });
 
-  holdButton('btn-left', function () { nudge(0, -2); });
-  holdButton('btn-right', function () { nudge(0, 2); });
-  holdButton('btn-up', function () { nudge(1, 0); });
-  holdButton('btn-down', function () { nudge(-1, 0); });
+  // Кнопки управления траекторией (поворот носа)
+  holdButton('btn-turn-left', function () { turnShip(0.05); });
+  holdButton('btn-turn-right', function () { turnShip(-0.05); });
 
   window.addEventListener('keydown', function (e) {
     switch (e.key) {
@@ -862,6 +841,8 @@
       case 'ArrowRight': nudge(0, 2); e.preventDefault(); break;
       case 'ArrowUp': nudge(1, 0); e.preventDefault(); break;
       case 'ArrowDown': nudge(-1, 0); e.preventDefault(); break;
+      case 'a': case 'A': case 'ф': case 'Ф': turnShip(0.05); break;
+      case 'd': case 'D': case 'в': case 'В': turnShip(-0.05); break;
       case ' ': startSim(); e.preventDefault(); break;
       case 'b': case 'B': case 'и': case 'И':
         burnNow(); e.preventDefault(); break;
