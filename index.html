@@ -27,6 +27,24 @@
     <div class="canvas-wrap">
       <canvas id="scene"></canvas>
       <div id="toast" class="toast"></div>
+
+      <div id="result-overlay" class="result-overlay">
+        <div class="result-card">
+          <div class="result-icon" id="result-icon">✓</div>
+          <h3 id="result-title">Стыковка</h3>
+          <p id="result-reason" class="result-reason"></p>
+          <div class="result-stats">
+            <div><span>Время</span><b id="res-time">0.0 с</b></div>
+            <div><span>Топливо</span><b id="res-fuel">0.0</b></div>
+            <div><span>Мин. дистанция</span><b id="res-mindist">0.0</b></div>
+            <div><span>Макс. скорость</span><b id="res-maxspeed">0.0</b></div>
+          </div>
+          <div class="result-actions">
+            <button id="res-retry" class="primary">⟲ Заново</button>
+            <button id="res-close">Закрыть</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="hud">
