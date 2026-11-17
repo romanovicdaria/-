@@ -13,7 +13,9 @@
       fuel: 100,
       dockR: 45,
       maxSpeed: 25,
-      timeLimit: 3600
+      timeLimit: 3600,
+      debris: 10,
+      asteroids: 4
     },
     {
       id: 'rbar',
@@ -23,7 +25,9 @@
       fuel: 100,
       dockR: 40,
       maxSpeed: 20,
-      timeLimit: 3600
+      timeLimit: 3600,
+      debris: 12,
+      asteroids: 5
     },
     {
       id: 'vbartight',
@@ -33,7 +37,9 @@
       fuel: 100,
       dockR: 35,
       maxSpeed: 12,
-      timeLimit: 3600
+      timeLimit: 3600,
+      debris: 16,
+      asteroids: 7
     }
   ];
 
@@ -58,7 +64,9 @@
   // ---------- Константы ----------
   var SCALE = 1.6;
   var STATION_R = 18;
+  var SHIP_HIT_R = 7;
   var DT = 0.05;
+  var WORLD_BOUND = 900; // куда спавнить мусор
 
   // ---------- DOM ----------
   var canvas = document.getElementById('scene');
@@ -75,6 +83,7 @@
   var fuelFill = document.getElementById('fuel-fill');
   var missionNameEl = document.getElementById('mission-name');
   var stationNameEl = document.getElementById('station-name');
+  var noseAngleEl = document.getElementById('nose-angle');
 
   var sSpeed = document.getElementById('s-speed');
   var sAng = document.getElementById('s-ang');
@@ -110,7 +119,8 @@
     ghostTrails: [],
     cam: { x: 0, y: 0 },
     minDist: Infinity,
-    maxSpeed: 0
+    maxSpeed: 0,
+    hazards: []
   };
 
   var rafId = null;
@@ -141,10 +151,135 @@
   function syncOutputs() {
     if (vSpeed && sSpeed) vSpeed.textContent = parseFloat(sSpeed.value).toFixed(0);
     if (vAng && sAng) vAng.textContent = parseFloat(sAng.value).toFixed(0) + '°';
+    updateNoseAngle();
   }
 
   function sliderSpeed() {
     return sSpeed ? parseFloat(sSpeed.value) || 0 : 0;
+  }
+
+  function updateNoseAngle() {
+    if (!noseAngleEl) return;
+    var deg = Math.round(state.ship.angle * 180 / Math.PI);
+    // нормализуем в -180..180
+    deg = ((deg % 360) + 540) % 360 - 180;
+    noseAngleEl.textContent = deg + '°';
+  }
+
+  // ============================================================
+  //  АСТЕРОИДЫ И МУСОР
+  // ============================================================
+  function randRange(a, b) { return a + Math.random() * (b - a); }
+
+  function makeAsteroidShape(r) {
+    var pts = [];
+    var n = 8 + Math.floor(Math.random() * 5);
+    for (var i = 0; i < n; i++) {
+      var ang = (i / n) * Math.PI * 2;
+      var rr = r * randRange(0.72, 1.18);
+      pts.push({ x: Math.cos(ang) * rr, y: Math.sin(ang) * rr });
+    }
+    return pts;
+  }
+
+  function generateHazards() {
+    var list = [];
+    var startX = mission.start.x;
+    var startY = mission.start.y;
+
+    function farFromStart(x, y, minD) {
+      var dx = x - startX, dy = y - startY;
+      return Math.sqrt(dx * dx + dy * dy) > minD;
+    }
+    function farFromStation(x, y, minD) {
+      var dx = x - state.stationPos.x, dy = y - state.stationPos.y;
+      return Math.sqrt(dx * dx + dy * dy) > minD;
+    }
+
+    function tryPlace(minR, maxR) {
+      for (var attempt = 0; attempt < 60; attempt++) {
+        var x = randRange(-WORLD_BOUND, WORLD_BOUND);
+        var y = randRange(-WORLD_BOUND, WORLD_BOUND);
+        var r = randRange(minR, maxR);
+        if (!farFromStart(x, y, 120 + r)) continue;
+        if (!farFromStation(x, y, 120 + r)) continue;
+        var ok = true;
+        for (var j = 0; j < list.length; j++) {
+          var o = list[j];
+          var ddx = x - o.x, ddy = y - o.y;
+          if (Math.sqrt(ddx * ddx + ddy * ddy) < r + o.r + 40) { ok = false; break; }
+        }
+        if (!ok) continue;
+        return { x: x, y: y, r: r };
+      }
+      return null;
+    }
+
+    // Мусор (мелкий, быстрый)
+    for (var d = 0; d < mission.debris; d++) {
+      var p = tryPlace(4, 8);
+      if (!p) continue;
+      var spd = randRange(6, 16);
+      var dir = randRange(0, Math.PI * 2);
+      list.push({
+        kind: 'debris',
+        x: p.x, y: p.y, r: p.r,
+        vx: Math.cos(dir) * spd,
+        vy: Math.sin(dir) * spd,
+        angle: randRange(0, Math.PI * 2),
+        spin: randRange(-3, 3),
+        shape: null
+      });
+    }
+
+    // Астероиды (крупные, медленные)
+    for (var a = 0; a < mission.asteroids; a++) {
+      var p2 = tryPlace(14, 26);
+      if (!p2) continue;
+      var spd2 = randRange(2, 7);
+      var dir2 = randRange(0, Math.PI * 2);
+      list.push({
+        kind: 'asteroid',
+        x: p2.x, y: p2.y, r: p2.r,
+        vx: Math.cos(dir2) * spd2,
+        vy: Math.sin(dir2) * spd2,
+        angle: randRange(0, Math.PI * 2),
+        spin: randRange(-0.8, 0.8),
+        shape: makeAsteroidShape(p2.r)
+      });
+    }
+
+    state.hazards = list;
+  }
+
+  function stepHazards() {
+    for (var i = 0; i < state.hazards.length; i++) {
+      var h = state.hazards[i];
+      h.x += h.vx * DT;
+      h.y += h.vy * DT;
+      h.angle += h.spin * DT;
+
+      // Мягкое отражение от границ мира
+      if (h.x < -WORLD_BOUND) { h.x = -WORLD_BOUND; h.vx = Math.abs(h.vx); }
+      if (h.x >  WORLD_BOUND) { h.x =  WORLD_BOUND; h.vx = -Math.abs(h.vx); }
+      if (h.y < -WORLD_BOUND) { h.y = -WORLD_BOUND; h.vy = Math.abs(h.vy); }
+      if (h.y >  WORLD_BOUND) { h.y =  WORLD_BOUND; h.vy = -Math.abs(h.vy); }
+    }
+  }
+
+  function checkHazardCollision() {
+    for (var i = 0; i < state.hazards.length; i++) {
+      var h = state.hazards[i];
+      var dx = state.ship.x - h.x;
+      var dy = state.ship.y - h.y;
+      var d = Math.sqrt(dx * dx + dy * dy);
+      if (d < h.r + SHIP_HIT_R) {
+        var name = h.kind === 'asteroid' ? 'астероидом' : 'космическим мусором';
+        finish(false, 'Столкновение с ' + name + '!');
+        return true;
+      }
+    }
+    return false;
   }
 
   // ---------- Сброс ----------
@@ -182,6 +317,9 @@
     state.ship.x = mission.start.x;
     state.ship.y = mission.start.y;
     state.ship.angle = mission.start.angle;
+
+    generateHazards();
+    updateNoseAngle();
 
     msgEl.className = 'msg';
     msgEl.textContent = '';
@@ -241,7 +379,6 @@
       state.velocity.x = Math.cos(state.ship.angle) * targetSpeed;
       state.velocity.y = Math.sin(state.ship.angle) * targetSpeed;
     } else {
-      // Без тяги скорость гасится
       state.velocity.x *= 0.98;
       state.velocity.y *= 0.98;
       if (Math.abs(state.velocity.x) < 0.01) state.velocity.x = 0;
@@ -251,12 +388,15 @@
     state.ship.x += state.velocity.x * DT;
     state.ship.y += state.velocity.y * DT;
 
-    // Движение станции
+    // Станция
     state.stationPos.x += state.stationVel.x * DT;
     state.stationPos.y += state.stationVel.y * DT;
     state.stationAngle += 0.01;
     if (state.stationPos.y < -150) state.stationVel.y = 1.5;
     if (state.stationPos.y > 150) state.stationVel.y = -1.5;
+
+    // Мусор
+    stepHazards();
 
     state.t += DT;
 
@@ -283,6 +423,7 @@
 
   function checkResult() {
     if (state.docked) return;
+    if (checkHazardCollision()) return;
 
     var dx = state.ship.x - state.stationPos.x;
     var dy = state.ship.y - state.stationPos.y;
@@ -437,6 +578,74 @@
     for (var y = startY; y < h; y += stepPx) {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
     }
+  }
+
+  function drawHazard(h) {
+    var p = toScreen(h.x, h.y);
+    var rPx = h.r * SCALE;
+
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(h.angle);
+
+    if (h.kind === 'asteroid') {
+      var g = ctx.createRadialGradient(-rPx * 0.3, -rPx * 0.3, rPx * 0.2, 0, 0, rPx);
+      g.addColorStop(0, '#9a8b7a');
+      g.addColorStop(0.6, '#6b5d4f');
+      g.addColorStop(1, '#3d342b');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      var pts = h.shape;
+      for (var i = 0; i < pts.length; i++) {
+        var px = pts[i].x * SCALE;
+        var py = pts[i].y * SCALE;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // кратеры
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.beginPath();
+      ctx.arc(-rPx * 0.25, -rPx * 0.1, rPx * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(rPx * 0.3, rPx * 0.25, rPx * 0.16, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // мусор — обломок
+      ctx.fillStyle = '#8a97ad';
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(-rPx, -rPx * 0.6);
+      ctx.lineTo(rPx * 0.3, -rPx);
+      ctx.lineTo(rPx, 0);
+      ctx.lineTo(rPx * 0.2, rPx);
+      ctx.lineTo(-rPx * 0.7, rPx * 0.4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,77,77,0.55)';
+      ctx.beginPath();
+      ctx.arc(0, 0, rPx * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+
+    // предупреждающее кольцо
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, rPx + 2, 0, Math.PI * 2);
+    ctx.strokeStyle = h.kind === 'asteroid'
+      ? 'rgba(255,184,77,0.35)'
+      : 'rgba(255,77,77,0.35)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
   }
 
   function drawStation(cx, cy, angle) {
@@ -749,6 +958,11 @@
 
     drawStation(st.x, st.y, state.stationAngle);
 
+    // Опасности поверх всего, но под кораблём
+    for (var hi = 0; hi < state.hazards.length; hi++) {
+      drawHazard(state.hazards[hi]);
+    }
+
     var sp = toScreen(state.ship.x, state.ship.y);
     var engineOn = state.running && sliderSpeed() > 0 && state.fuel > 0;
     drawShip(sp.x, sp.y, state.ship.angle, engineOn);
@@ -769,6 +983,9 @@
         state.ship.y = state.stationPos.y;
       }
 
+      // Мусор дрейфует даже в ожидании
+      stepHazards();
+
       updateHud();
       updateFuel();
       draw();
@@ -780,6 +997,7 @@
       if (state.running) stepPhysics();
     }
 
+    updateNoseAngle();
     updateHud();
     updateFuel();
     draw();
@@ -787,34 +1005,56 @@
   }
 
   // ---------- Поворот ----------
-  function turnShip(delta) {
-    // Разрешено и до старта, и в полёте; блокируется только после финиша/стыковки
+  function turnShip(delta, instant) {
     if (state.finished || state.docked) return;
-    state.ship.angle += delta * ship.turnSpeed * 2;
+    var step = instant ? delta : delta * ship.turnSpeed * 2;
+    state.ship.angle += step;
     if (state.ship.angle > Math.PI) state.ship.angle -= Math.PI * 2;
     if (state.ship.angle < -Math.PI) state.ship.angle += Math.PI * 2;
+    updateNoseAngle();
     draw();
   }
 
-  function holdButton(id, fn) {
+  function setupTurnButton(id, dir) {
     var el = document.getElementById(id);
     if (!el) return;
-    var timer = null;
-    function start(e) {
+
+    var holdTimer = null;
+    var holdStart = 0;
+    var repeated = false;
+
+    function tick() {
+      turnShip(dir * 0.05);
+      repeated = true;
+    }
+
+    function onDown(e) {
       if (e) e.preventDefault();
-      fn();
-      if (timer) clearInterval(timer);
-      timer = setInterval(fn, 80);
+      el.classList.add('held');
+      repeated = false;
+      holdStart = Date.now();
+      // короткий тап всё равно даст шаг, но если удержали — пойдёт серия
+      holdTimer = setTimeout(function () {
+        tick();
+        holdTimer = setInterval(tick, 60);
+      }, 180);
     }
-    function stop() {
-      if (timer) { clearInterval(timer); timer = null; }
+
+    function onUp() {
+      el.classList.remove('held');
+      if (holdTimer) { clearTimeout(holdTimer); clearInterval(holdTimer); holdTimer = null; }
+      if (!repeated) {
+        // короткий тап — фиксированный шаг 5°
+        turnShip(dir * (Math.PI / 36), true);
+      }
     }
-    el.addEventListener('mousedown', start);
-    el.addEventListener('touchstart', start, { passive: false });
-    el.addEventListener('mouseup', stop);
-    el.addEventListener('mouseleave', stop);
-    el.addEventListener('touchend', stop);
-    el.addEventListener('touchcancel', stop);
+
+    el.addEventListener('mousedown', onDown);
+    el.addEventListener('touchstart', onDown, { passive: false });
+    el.addEventListener('mouseup', onUp);
+    el.addEventListener('mouseleave', onUp);
+    el.addEventListener('touchend', onUp);
+    el.addEventListener('touchcancel', onUp);
   }
 
   // ---------- Меню ----------
@@ -882,8 +1122,8 @@
   });
   if (btnBurn) btnBurn.addEventListener('click', burnImpulse);
 
-  holdButton('btn-turn-left', function () { turnShip(0.05); });
-  holdButton('btn-turn-right', function () { turnShip(-0.05); });
+  setupTurnButton('btn-turn-left', +1);
+  setupTurnButton('btn-turn-right', -1);
 
   if (resRetry) resRetry.addEventListener('click', function () {
     if (overlayEl) overlayEl.classList.remove('show');
@@ -914,17 +1154,3 @@
         turnShip(-0.05); e.preventDefault(); break;
       case 'r': case 'R': case 'к': case 'К':
         state.running = false; resetRound(true); break;
-    }
-  });
-
-  window.addEventListener('resize', resize);
-
-  // ---------- Инициализация ----------
-  if (missionNameEl) missionNameEl.textContent = mission.name;
-  if (stationNameEl) stationNameEl.textContent = station.name;
-  renderChips();
-  syncOutputs();
-  resetRound(true);
-  resize();
-  if (rafId === null) rafId = requestAnimationFrame(loop);
-})();
