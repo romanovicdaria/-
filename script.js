@@ -1154,3 +1154,17 @@
         turnShip(-0.05); e.preventDefault(); break;
       case 'r': case 'R': case 'к': case 'К':
         state.running = false; resetRound(true); break;
+    }
+  });
+
+  window.addEventListener('resize', resize);
+
+  // ---------- Инициализация ----------
+  if (missionNameEl) missionNameEl.textContent = mission.name;
+  if (stationNameEl) stationNameEl.textContent = station.name;
+  renderChips();
+  syncOutputs();
+  resetRound(true);
+  resize();
+  if (rafId === null) rafId = requestAnimationFrame(loop);
+})();
