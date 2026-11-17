@@ -86,10 +86,20 @@
 
     <div class="panel">
       <h2>Поворот корабля</h2>
-      <div class="buttons" style="margin-top: 0;">
-        <button id="btn-turn-left">↺ Влево</button>
-        <button id="btn-turn-right">↻ Вправо</button>
+      <div class="turn-header">
+        <span>Нос: <b id="nose-angle">0°</b></span>
       </div>
+      <div class="turn-controls">
+        <button id="btn-turn-left" class="turn-btn" aria-label="Повернуть влево">
+          <span class="turn-arrow">↺</span>
+          <span class="turn-caption">Влево</span>
+        </button>
+        <button id="btn-turn-right" class="turn-btn" aria-label="Повернуть вправо">
+          <span class="turn-arrow">↻</span>
+          <span class="turn-caption">Вправо</span>
+        </button>
+      </div>
+      <p class="hint-small">Удерживай — плавный поворот. Короткий тап — шаг 5°. Клавиши A/D или ←/→.</p>
     </div>
 
     <div class="panel selectors">
