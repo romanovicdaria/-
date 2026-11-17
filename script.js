@@ -66,7 +66,10 @@
   var msgEl = document.getElementById('msg');
   var hudDist = document.getElementById('hud-dist');
   var hudSpeed = document.getElementById('hud-speed');
+  var hudRange = document.getElementById('hud-range');
   var hudTime = document.getElementById('hud-time');
+  var hudDv = document.getElementById('hud-dv');
+  var hudGoal = document.getElementById('hud-goal');
   var hudStatus = document.getElementById('hud-status');
   var fuelNum = document.getElementById('fuel-num');
   var fuelFill = document.getElementById('fuel-fill');
@@ -74,9 +77,12 @@
   var stationNameEl = document.getElementById('station-name');
 
   var sSpeed = document.getElementById('s-speed');
+  var sAng = document.getElementById('s-ang');
   var vSpeed = document.getElementById('v-speed');
+  var vAng = document.getElementById('v-ang');
 
   var btnStart = document.getElementById('btn-start');
+  var btnBurn = document.getElementById('btn-burn');
   var btnReset = document.getElementById('btn-reset');
 
   // ---------- Текущие выборы ----------
@@ -91,6 +97,8 @@
     docked: false,
     t: 0,
     ship: { x: 0, y: 0, angle: 0 },
+    // скорость корабля в мировых координатах (реальная, не ползунок)
+    velocity: { x: 0, y: 0 },
     stationPos: { x: 0, y: 0 },
     stationVel: { x: 0, y: 0 },
     stationAngle: 0,
@@ -99,6 +107,8 @@
     ghostTrails: [],
     cam: { x: 0, y: 0 }
   };
+
+  var rafId = null;
 
   // ---------- Размер canvas ----------
   function resize() {
@@ -124,7 +134,12 @@
 
   // ---------- Ползунки ----------
   function syncOutputs() {
-    if (vSpeed) vSpeed.textContent = parseFloat(sSpeed.value).toFixed(0);
+    if (vSpeed && sSpeed) vSpeed.textContent = parseFloat(sSpeed.value).toFixed(0);
+    if (vAng && sAng) vAng.textContent = parseFloat(sAng.value).toFixed(0) + '°';
+  }
+
+  function currentSpeed() {
+    return sSpeed ? parseFloat(sSpeed.value) || 0 : 0;
   }
 
   // ---------- Сброс ----------
@@ -136,18 +151,23 @@
     state.trail = [];
     state.cam.x = 0;
     state.cam.y = 0;
-    
+    state.velocity.x = 0;
+    state.velocity.y = 0;
+
     state.stationPos = { x: 0, y: 0 };
     state.stationVel = { x: 0, y: -1.5 };
     state.stationAngle = 0;
 
     if (state.ship.x !== 0 || state.ship.y !== 0) {
-      state.ghostTrails.push(state.trail.slice());
-      if (state.ghostTrails.length > 3) state.ghostTrails.shift();
+      if (state.trail.length > 1) {
+        state.ghostTrails.push(state.trail.slice());
+        if (state.ghostTrails.length > 3) state.ghostTrails.shift();
+      }
     }
 
     if (resetSliders && sSpeed) {
       sSpeed.value = 0;
+      if (sAng) sAng.value = 0;
       syncOutputs();
     }
 
@@ -160,6 +180,7 @@
     msgEl.textContent = '';
     hudStatus.textContent = 'ожидание';
     hudStatus.style.color = '';
+    if (btnBurn) btnBurn.disabled = true;
 
     updateHud();
     updateFuel();
@@ -177,28 +198,56 @@
     hudStatus.style.color = '#4da6ff';
     msgEl.className = 'msg';
     msgEl.textContent = '';
-    requestAnimationFrame(loop);
+    if (btnBurn) btnBurn.disabled = false;
+
+    if (rafId === null) rafId = requestAnimationFrame(loop);
   }
 
-  // ---------- Физика (Аркадная) ----------
+  // ---------- Импульс ----------
+  function burnImpulse() {
+    if (!state.running || state.finished || state.docked) return;
+    if (state.fuel <= 0) return;
+
+    var dv = 2; // прибавка к скорости за один импульс
+    var ang = sAng ? (parseFloat(sAng.value) || 0) * Math.PI / 180 : 0;
+
+    state.velocity.x += Math.cos(ang) * dv;
+    state.velocity.y += Math.sin(ang) * dv;
+
+    state.fuel = Math.max(0, state.fuel - 2);
+    updateFuel();
+    updateHud();
+    draw();
+  }
+
+  // ---------- Физика ----------
   function stepPhysics() {
     if (state.finished || state.docked) return;
 
-    var targetSpeed = parseFloat(sSpeed.value);
-    
-    // Расход топлива (тратится только если летим)
+    var targetSpeed = currentSpeed();
+    var engineOn = false;
+
+    // Расход топлива только если летим и есть топливо
     if (targetSpeed > 0 && state.fuel > 0) {
       state.fuel -= targetSpeed * DT * 0.05;
       if (state.fuel < 0) state.fuel = 0;
-    } else if (state.fuel <= 0) {
-      targetSpeed = 0;
+      engineOn = true;
+
+      // Корабль движется вдоль носа с заданной скоростью
+      var vx = Math.cos(state.ship.angle) * targetSpeed;
+      var vy = Math.sin(state.ship.angle) * targetSpeed;
+      state.velocity.x = vx;
+      state.velocity.y = vy;
+    } else {
+      // Без тяги скорость гасится (аркадная модель)
+      state.velocity.x *= 0.98;
+      state.velocity.y *= 0.98;
+      if (Math.abs(state.velocity.x) < 0.01) state.velocity.x = 0;
+      if (Math.abs(state.velocity.y) < 0.01) state.velocity.y = 0;
     }
 
-    // Движение корабля строго по направлению носа
-    var dx = Math.cos(state.ship.angle) * targetSpeed * DT;
-    var dy = Math.sin(state.ship.angle) * targetSpeed * DT;
-    state.ship.x += dx;
-    state.ship.y += dy;
+    state.ship.x += state.velocity.x * DT;
+    state.ship.y += state.velocity.y * DT;
 
     // Движение станции
     state.stationPos.x += state.stationVel.x * DT;
@@ -216,7 +265,11 @@
 
     updateCamera();
     checkResult();
+    drawShipEngine(engineOn);
   }
+
+  var shipEngineFlag = false;
+  function drawShipEngine(on) { shipEngineFlag = on; }
 
   function updateCamera() {
     var tx = (state.ship.x + state.stationPos.x) * 0.5;
@@ -236,22 +289,23 @@
     var dx = state.ship.x - state.stationPos.x;
     var dy = state.ship.y - state.stationPos.y;
     var dist = Math.sqrt(dx * dx + dy * dy);
-    var currentSpeed = parseFloat(sSpeed.value);
+    var spd = Math.sqrt(state.velocity.x * state.velocity.x + state.velocity.y * state.velocity.y);
 
-    if (dist <= mission.dockR && currentSpeed <= mission.maxSpeed) {
+    if (dist <= mission.dockR && spd <= mission.maxSpeed) {
       state.docked = true;
       hudStatus.textContent = 'состыковано';
       hudStatus.style.color = '#4cd964';
       msgEl.className = 'msg show ok';
       msgEl.textContent = 'Успешная стыковка! Корабль пристыкован к станции.';
+      if (btnBurn) btnBurn.disabled = true;
       return;
     }
     if (Math.abs(state.ship.x) > 1200 || Math.abs(state.ship.y) > 900) {
       finish(false, 'Аппарат ушёл за пределы зоны.');
       return;
     }
-    if (dist < STATION_R * 0.8 && currentSpeed > mission.maxSpeed) {
-      finish(false, 'Столкновение со станцией! Скорость ' + currentSpeed.toFixed(1) + '.');
+    if (dist < STATION_R * 0.8 && spd > mission.maxSpeed) {
+      finish(false, 'Столкновение со станцией! Скорость ' + spd.toFixed(1) + '.');
       return;
     }
     if (state.fuel <= 0) {
@@ -271,6 +325,7 @@
     hudStatus.style.color = ok ? '#4cd964' : '#ff4d4d';
     msgEl.className = 'msg show ' + (ok ? 'ok' : 'err');
     msgEl.textContent = text;
+    if (btnBurn) btnBurn.disabled = true;
     updateHud();
     draw();
   }
@@ -280,15 +335,28 @@
     var dx = state.ship.x - state.stationPos.x;
     var dy = state.ship.y - state.stationPos.y;
     var dist = Math.sqrt(dx * dx + dy * dy);
-    var currentSpeed = parseFloat(sSpeed.value);
+    var spd = Math.sqrt(state.velocity.x * state.velocity.x + state.velocity.y * state.velocity.y);
 
-    hudDist.textContent = dist.toFixed(1);
-    hudSpeed.textContent = currentSpeed.toFixed(1);
-    hudTime.textContent = state.t.toFixed(1);
+    if (hudDist) hudDist.textContent = dist.toFixed(1);
+    if (hudSpeed) hudSpeed.textContent = spd.toFixed(1);
+    if (hudTime) hudTime.textContent = state.t.toFixed(1);
+    if (hudDv) hudDv.textContent = currentSpeed().toFixed(1);
+    if (hudGoal) hudGoal.textContent = state.docked ? 'состыковано' : (state.finished ? '—' : 'стыковка');
+
+    // Сближение: производная расстояния (отрицательная = приближаемся)
+    if (hudRange) {
+      if (dist > 0.001) {
+        var approach = (dx * state.velocity.x + dy * state.velocity.y) / dist;
+        hudRange.textContent = (-approach).toFixed(1);
+      } else {
+        hudRange.textContent = '0.0';
+      }
+    }
   }
 
   function updateFuel() {
-    fuelNum.textContent = state.fuel.toFixed(1);
+    if (!fuelNum || !fuelFill) return;
+    fuelNum.textContent = state.fuel.toFixed(1) + ' / ' + mission.fuel;
     var pct = Math.max(0, Math.min(1, state.fuel / mission.fuel));
     fuelFill.style.width = (pct * 100).toFixed(1) + '%';
   }
@@ -566,7 +634,7 @@
     var b = parseInt(h.substr(4,2),16);
     return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
   }
-  
+
   function lighten(hex, k) {
     var h = hex.replace('#','');
     if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
@@ -595,7 +663,7 @@
     var dx = state.ship.x - state.stationPos.x;
     var dy = state.ship.y - state.stationPos.y;
     var dist = Math.sqrt(dx * dx + dy * dy);
-    
+
     // Призрачные следы
     for (var g = 0; g < state.ghostTrails.length; g++) {
       var gt = state.ghostTrails[g];
@@ -664,40 +732,41 @@
     drawStation(st.x, st.y, state.stationAngle);
 
     var sp = toScreen(state.ship.x, state.ship.y);
-    var currentSpeed = parseFloat(sSpeed.value);
-    var isEngineOn = (state.running && currentSpeed > 0);
-
-    drawShip(sp.x, sp.y, state.ship.angle, isEngineOn);
+    var engineOn = state.running && currentSpeed() > 0;
+    drawShip(sp.x, sp.y, state.ship.angle, engineOn);
   }
 
   function loop() {
+    rafId = null;
+
     if (!state.running) {
-      state.t += 0.016; 
+      // Анимация ожидания
       state.stationAngle += 0.01;
       state.stationPos.x += state.stationVel.x * 0.016;
       state.stationPos.y += state.stationVel.y * 0.016;
       if (state.stationPos.y < -150) state.stationVel.y = 1.5;
       if (state.stationPos.y > 150) state.stationVel.y = -1.5;
-      
+
       if (state.docked) {
         state.ship.x = state.stationPos.x;
         state.ship.y = state.stationPos.y;
       }
-      
+
       updateHud();
+      updateFuel();
       draw();
-      requestAnimationFrame(loop);
+      rafId = requestAnimationFrame(loop);
       return;
     }
-    
+
     for (var i = 0; i < 2; i++) {
       if (state.running) stepPhysics();
     }
-    
+
     updateHud();
     updateFuel();
     draw();
-    requestAnimationFrame(loop);
+    rafId = requestAnimationFrame(loop);
   }
 
   // ---------- Поворот ----------
@@ -711,6 +780,7 @@
 
   function holdButton(id, fn) {
     var el = document.getElementById(id);
+    if (!el) return;
     var timer = null;
     function start(e) { e.preventDefault(); fn(); timer = setInterval(fn, 80); }
     function stop() { if (timer) { clearInterval(timer); timer = null; } }
@@ -777,13 +847,15 @@
   }
 
   // ---------- Обработчики ----------
-  if (sSpeed) sSpeed.addEventListener('input', function () { syncOutputs(); });
+  if (sSpeed) sSpeed.addEventListener('input', syncOutputs);
+  if (sAng) sAng.addEventListener('input', syncOutputs);
 
   if (btnStart) btnStart.addEventListener('click', startSim);
   if (btnReset) btnReset.addEventListener('click', function () {
     state.running = false;
     resetRound(true);
   });
+  if (btnBurn) btnBurn.addEventListener('click', burnImpulse);
 
   holdButton('btn-turn-left', function () { turnShip(0.05); });
   holdButton('btn-turn-right', function () { turnShip(-0.05); });
@@ -792,9 +864,20 @@
     switch (e.key) {
       case 'ArrowLeft': turnShip(0.05); e.preventDefault(); break;
       case 'ArrowRight': turnShip(-0.05); e.preventDefault(); break;
-      case 'ArrowUp': if (sSpeed) { sSpeed.value = parseFloat(sSpeed.value) + 1; syncOutputs(); } e.preventDefault(); break;
-      case 'ArrowDown': if (sSpeed) { sSpeed.value = parseFloat(sSpeed.value) - 1; syncOutputs(); } e.preventDefault(); break;
+      case 'ArrowUp':
+        if (sSpeed) { sSpeed.value = Math.min(30, parseFloat(sSpeed.value) + 1); syncOutputs(); }
+        e.preventDefault(); break;
+      case 'ArrowDown':
+        if (sSpeed) { sSpeed.value = Math.max(0, parseFloat(sSpeed.value) - 1); syncOutputs(); }
+        e.preventDefault(); break;
       case ' ': startSim(); e.preventDefault(); break;
+      case 'b': case 'B': case 'и': case 'И':
+        if (btnBurn && !btnBurn.disabled) burnImpulse();
+        e.preventDefault(); break;
+      case 'a': case 'A': case 'ф': case 'Ф':
+        turnShip(0.05); e.preventDefault(); break;
+      case 'd': case 'D': case 'в': case 'В':
+        turnShip(-0.05); e.preventDefault(); break;
       case 'r': case 'R': case 'к': case 'К':
         state.running = false; resetRound(true); break;
     }
@@ -809,5 +892,5 @@
   syncOutputs();
   resetRound(true);
   resize();
-  requestAnimationFrame(loop);
+  if (rafId === null) rafId = requestAnimationFrame(loop);
 })();
