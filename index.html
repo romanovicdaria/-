@@ -40,16 +40,16 @@
     </div>
 
     <div class="fuel">
-      <div class="fuel-label">Топливо: <b id="fuel-num">30.0 / 30</b></div>
+      <div class="fuel-label">Топливо: <b id="fuel-num">100.0 / 100</b></div>
       <div class="fuel-bar"><div class="fuel-fill" id="fuel-fill"></div></div>
     </div>
 
     <div class="panel">
       <h2>Импульс (ΔV)</h2>
       <div class="slider-row">
-        <label for="s-dv">ΔV</label>
-        <input type="range" id="s-dv" min="0" max="30" step="0.5" value="0">
-        <span class="val" id="v-dv">0.0</span>
+        <label for="s-speed">Скорость</label>
+        <input type="range" id="s-speed" min="0" max="30" step="0.5" value="0">
+        <span class="val" id="v-speed">0</span>
       </div>
       <div class="slider-row">
         <label for="s-ang">Угол имп.</label>
@@ -77,7 +77,7 @@
     <div class="panel selectors">
       <h2>Выбор миссии</h2>
       <div class="chips" id="mission-chips"></div>
-      
+
       <h2 style="margin-top:12px;">Выбор станции</h2>
       <div class="chips" id="station-chips"></div>
 
