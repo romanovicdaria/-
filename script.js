@@ -85,6 +85,10 @@
   var btnBurn = document.getElementById('btn-burn');
   var btnReset = document.getElementById('btn-reset');
 
+  var overlayEl = document.getElementById('result-overlay');
+  var resRetry = document.getElementById('res-retry');
+  var resClose = document.getElementById('res-close');
+
   // ---------- Текущие выборы ----------
   var mission = MISSIONS[0];
   var station = STATIONS[0];
@@ -97,7 +101,6 @@
     docked: false,
     t: 0,
     ship: { x: 0, y: 0, angle: 0 },
-    // скорость корабля в мировых координатах (реальная, не ползунок)
     velocity: { x: 0, y: 0 },
     stationPos: { x: 0, y: 0 },
     stationVel: { x: 0, y: 0 },
@@ -105,7 +108,9 @@
     fuel: 100,
     trail: [],
     ghostTrails: [],
-    cam: { x: 0, y: 0 }
+    cam: { x: 0, y: 0 },
+    minDist: Infinity,
+    maxSpeed: 0
   };
 
   var rafId = null;
@@ -138,7 +143,7 @@
     if (vAng && sAng) vAng.textContent = parseFloat(sAng.value).toFixed(0) + '°';
   }
 
-  function currentSpeed() {
+  function sliderSpeed() {
     return sSpeed ? parseFloat(sSpeed.value) || 0 : 0;
   }
 
@@ -153,6 +158,8 @@
     state.cam.y = 0;
     state.velocity.x = 0;
     state.velocity.y = 0;
+    state.minDist = Infinity;
+    state.maxSpeed = 0;
 
     state.stationPos = { x: 0, y: 0 };
     state.stationVel = { x: 0, y: -1.5 };
@@ -181,6 +188,7 @@
     hudStatus.textContent = 'ожидание';
     hudStatus.style.color = '';
     if (btnBurn) btnBurn.disabled = true;
+    if (overlayEl) overlayEl.classList.remove('show');
 
     updateHud();
     updateFuel();
@@ -208,7 +216,7 @@
     if (!state.running || state.finished || state.docked) return;
     if (state.fuel <= 0) return;
 
-    var dv = 2; // прибавка к скорости за один импульс
+    var dv = 2;
     var ang = sAng ? (parseFloat(sAng.value) || 0) * Math.PI / 180 : 0;
 
     state.velocity.x += Math.cos(ang) * dv;
@@ -224,22 +232,16 @@
   function stepPhysics() {
     if (state.finished || state.docked) return;
 
-    var targetSpeed = currentSpeed();
-    var engineOn = false;
+    var targetSpeed = sliderSpeed();
 
-    // Расход топлива только если летим и есть топливо
     if (targetSpeed > 0 && state.fuel > 0) {
       state.fuel -= targetSpeed * DT * 0.05;
       if (state.fuel < 0) state.fuel = 0;
-      engineOn = true;
 
-      // Корабль движется вдоль носа с заданной скоростью
-      var vx = Math.cos(state.ship.angle) * targetSpeed;
-      var vy = Math.sin(state.ship.angle) * targetSpeed;
-      state.velocity.x = vx;
-      state.velocity.y = vy;
+      state.velocity.x = Math.cos(state.ship.angle) * targetSpeed;
+      state.velocity.y = Math.sin(state.ship.angle) * targetSpeed;
     } else {
-      // Без тяги скорость гасится (аркадная модель)
+      // Без тяги скорость гасится
       state.velocity.x *= 0.98;
       state.velocity.y *= 0.98;
       if (Math.abs(state.velocity.x) < 0.01) state.velocity.x = 0;
@@ -265,11 +267,7 @@
 
     updateCamera();
     checkResult();
-    drawShipEngine(engineOn);
   }
-
-  var shipEngineFlag = false;
-  function drawShipEngine(on) { shipEngineFlag = on; }
 
   function updateCamera() {
     var tx = (state.ship.x + state.stationPos.x) * 0.5;
@@ -293,11 +291,7 @@
 
     if (dist <= mission.dockR && spd <= mission.maxSpeed) {
       state.docked = true;
-      hudStatus.textContent = 'состыковано';
-      hudStatus.style.color = '#4cd964';
-      msgEl.className = 'msg show ok';
-      msgEl.textContent = 'Успешная стыковка! Корабль пристыкован к станции.';
-      if (btnBurn) btnBurn.disabled = true;
+      finish(true, 'Успешная стыковка! Корабль пристыкован к станции.');
       return;
     }
     if (Math.abs(state.ship.x) > 1200 || Math.abs(state.ship.y) > 900) {
@@ -328,6 +322,27 @@
     if (btnBurn) btnBurn.disabled = true;
     updateHud();
     draw();
+    showResult(ok, text);
+  }
+
+  function showResult(ok, reason) {
+    if (!overlayEl) return;
+    var card = overlayEl.querySelector('.result-card');
+    if (card) card.className = 'result-card ' + (ok ? 'ok' : 'err');
+
+    document.getElementById('result-icon').textContent = ok ? '✓' : '✕';
+    document.getElementById('result-title').textContent =
+      ok ? 'Стыковка выполнена' : 'Миссия провалена';
+    document.getElementById('result-reason').textContent = reason;
+
+    document.getElementById('res-time').textContent = state.t.toFixed(1) + ' с';
+    document.getElementById('res-fuel').textContent =
+      state.fuel.toFixed(1) + ' / ' + mission.fuel;
+    document.getElementById('res-mindist').textContent =
+      isFinite(state.minDist) ? state.minDist.toFixed(1) : '—';
+    document.getElementById('res-maxspeed').textContent = state.maxSpeed.toFixed(1);
+
+    overlayEl.classList.add('show');
   }
 
   // ---------- HUD ----------
@@ -337,13 +352,16 @@
     var dist = Math.sqrt(dx * dx + dy * dy);
     var spd = Math.sqrt(state.velocity.x * state.velocity.x + state.velocity.y * state.velocity.y);
 
+    if (dist < state.minDist) state.minDist = dist;
+    if (spd > state.maxSpeed) state.maxSpeed = spd;
+
     if (hudDist) hudDist.textContent = dist.toFixed(1);
     if (hudSpeed) hudSpeed.textContent = spd.toFixed(1);
     if (hudTime) hudTime.textContent = state.t.toFixed(1);
-    if (hudDv) hudDv.textContent = currentSpeed().toFixed(1);
-    if (hudGoal) hudGoal.textContent = state.docked ? 'состыковано' : (state.finished ? '—' : 'стыковка');
+    if (hudDv) hudDv.textContent = sliderSpeed().toFixed(1);
+    if (hudGoal) hudGoal.textContent =
+      state.docked ? 'состыковано' : (state.finished ? '—' : 'стыковка');
 
-    // Сближение: производная расстояния (отрицательная = приближаемся)
     if (hudRange) {
       if (dist > 0.001) {
         var approach = (dx * state.velocity.x + dy * state.velocity.y) / dist;
@@ -732,7 +750,7 @@
     drawStation(st.x, st.y, state.stationAngle);
 
     var sp = toScreen(state.ship.x, state.ship.y);
-    var engineOn = state.running && currentSpeed() > 0;
+    var engineOn = state.running && sliderSpeed() > 0 && state.fuel > 0;
     drawShip(sp.x, sp.y, state.ship.angle, engineOn);
   }
 
@@ -740,7 +758,6 @@
     rafId = null;
 
     if (!state.running) {
-      // Анимация ожидания
       state.stationAngle += 0.01;
       state.stationPos.x += state.stationVel.x * 0.016;
       state.stationPos.y += state.stationVel.y * 0.016;
@@ -771,8 +788,9 @@
 
   // ---------- Поворот ----------
   function turnShip(delta) {
-    if (!state.running || state.docked) return;
-    state.ship.angle += delta * ship.turnSpeed;
+    // Разрешено и до старта, и в полёте; блокируется только после финиша/стыковки
+    if (state.finished || state.docked) return;
+    state.ship.angle += delta * ship.turnSpeed * 2;
     if (state.ship.angle > Math.PI) state.ship.angle -= Math.PI * 2;
     if (state.ship.angle < -Math.PI) state.ship.angle += Math.PI * 2;
     draw();
@@ -782,8 +800,15 @@
     var el = document.getElementById(id);
     if (!el) return;
     var timer = null;
-    function start(e) { e.preventDefault(); fn(); timer = setInterval(fn, 80); }
-    function stop() { if (timer) { clearInterval(timer); timer = null; } }
+    function start(e) {
+      if (e) e.preventDefault();
+      fn();
+      if (timer) clearInterval(timer);
+      timer = setInterval(fn, 80);
+    }
+    function stop() {
+      if (timer) { clearInterval(timer); timer = null; }
+    }
     el.addEventListener('mousedown', start);
     el.addEventListener('touchstart', start, { passive: false });
     el.addEventListener('mouseup', stop);
@@ -859,6 +884,15 @@
 
   holdButton('btn-turn-left', function () { turnShip(0.05); });
   holdButton('btn-turn-right', function () { turnShip(-0.05); });
+
+  if (resRetry) resRetry.addEventListener('click', function () {
+    if (overlayEl) overlayEl.classList.remove('show');
+    state.running = false;
+    resetRound(true);
+  });
+  if (resClose) resClose.addEventListener('click', function () {
+    if (overlayEl) overlayEl.classList.remove('show');
+  });
 
   window.addEventListener('keydown', function (e) {
     switch (e.key) {
